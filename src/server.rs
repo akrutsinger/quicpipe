@@ -28,7 +28,15 @@ async fn handle_connection(
             }
             return Err(err);
         }
-        anyhow::ensure!(buf == handshake, "invalid handshake");
+        if buf != handshake {
+            tracing::warn!(
+                "invalid handshake from {}: expected {} bytes, got {:?}",
+                remote_addr,
+                handshake.len(),
+                buf
+            );
+            anyhow::bail!("invalid handshake");
+        }
     }
 
     let result = if recv_only {
