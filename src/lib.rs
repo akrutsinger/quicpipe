@@ -1,4 +1,4 @@
-/// The ALPN for dumbpipe.
+/// The ALPN for quicpipe.
 ///
 /// The pipe is basically just passing data through 1:1, except that the connecting side will send a
 /// fixed size handshake to make sure the stream is created.

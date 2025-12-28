@@ -108,7 +108,7 @@ fn connect_listen_custom_alpn_happy() {
             "listen",
             "-p",
             &port.to_string(),
-            "--custom-alpn",
+            "--alpn",
             "utf8:mysuperalpn/0.1.0",
             "--once",
         ],
@@ -127,7 +127,7 @@ fn connect_listen_custom_alpn_happy() {
         [
             "connect",
             &format!("127.0.0.1:{}", port),
-            "--custom-alpn",
+            "--alpn",
             "utf8:mysuperalpn/0.1.0",
         ],
     )
@@ -246,7 +246,13 @@ fn listen_tcp_happy() {
     // start a quicpipe listen-tcp process
     let _listen_tcp = duct::cmd(
         quicpipe_bin(),
-        ["listen-tcp", "--host", &host_port, "-p", &port.to_string()],
+        [
+            "listen-tcp",
+            "--backend",
+            &host_port,
+            "-p",
+            &port.to_string(),
+        ],
     )
     .env_remove("RUST_LOG")
     .stderr_null()
@@ -293,7 +299,7 @@ fn connect_tcp_happy() {
         [
             "connect-tcp",
             &format!("127.0.0.1:{}", port),
-            "--addr",
+            "--listen",
             &host_port,
         ],
     )

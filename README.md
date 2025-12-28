@@ -40,21 +40,23 @@ Now type messages - they'll appear on both sides. The server keeps accepting new
 
 ### `listen` - Start a Server
 
-Listen for incoming QUIC connections and forward data to stdin/stdout.
+Listen for incoming QUIC connections and forward data to stdin/stdout. By default, keeps listening for new connections after each client disconnects.
 
 ```bash
 quicpipe listen [OPTIONS]
 ```
 
 **Options:**
-- `-p, --port <PORT>` - Port to listen on (default: random)
-- `--once` - Exit after the first connection closes
-- `--handshake <STRING>` - Custom handshake string (plain or `hex:...`)
-- `--recv-only` - Only receive data, don't send
-- `-v, --verbose` - Increase verbosity
-- `--ipv4-addr <ADDR>` - Listen on specific IPv4 address (e.g., `0.0.0.0:5000`)
-- `--ipv6-addr <ADDR>` - Listen on specific IPv6 address (e.g., `[::1]:5000`)
-- `--alpn <STRING>` - Set ALPN protocol (default: `h3`)
+| Option | Description |
+|--------|-------------|
+| `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
+| `--once` | Exit after the first client disconnects |
+| `-s, --handshake <STRING>` | Custom handshake for authentication (default: `ahoy`). Prefix with `hex:` for binary data |
+| `--recv-only` | Only receive data, don't send (close outgoing stream immediately) |
+| `-v, --verbose` | Increase output verbosity (repeat for more: `-v`, `-vv`, `-vvv`) |
+| `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address (e.g., `0.0.0.0:5000`). Takes precedence over `--port` |
+| `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address (e.g., `[::]:5000`). Takes precedence over `--port` |
+| `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`). Use `utf8:` prefix for plain text |
 
 **Examples:**
 
@@ -77,22 +79,29 @@ quicpipe listen -p 5000 --handshake "hex:5f4dcc3b5aa765d61d8327deb882cf99"
 
 ### `connect` - Connect to a Server
 
-Connect to a QUIC server and forward stdin/stdout.
+Connect to a QUIC server and forward stdin/stdout bidirectionally.
 
 ```bash
-quicpipe connect [OPTIONS] <SERVER_ADDR>
+quicpipe connect [OPTIONS] <SERVER>
 ```
 
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `<SERVER>` | QUIC server address to connect to (e.g., `192.168.1.100:5000`) |
+
 **Options:**
-- `--handshake <STRING>` - Custom handshake string (must match server)
-- `--retry` - Keep trying to connect until server is available
-- `--retry-interval <SECS>` - Retry interval in seconds (default: 2)
-- `--recv-only` - Only receive data, don't send
-- `-p, --port <PORT>` - Port to listen on (default: random)
-- `--ipv4-addr <ADDR>` - Listen on specific IPv4 address (e.g., `0.0.0.0:5000`)
-- `--ipv6-addr <ADDR>` - Listen on specific IPv6 address (e.g., `[::1]:5000`)
-- `--alpn <STRING>` - Set ALPN protocol (default: `h3`)
-- `-v, --verbose` - Increase verbosity
+| Option | Description |
+|--------|-------------|
+| `-s, --handshake <STRING>` | Custom handshake for authentication (must match server) |
+| `--retry` | Keep retrying until the server becomes available |
+| `--retry-interval <SECS>` | Seconds between connection retry attempts (default: 2) |
+| `--recv-only` | Only receive data, don't send (close outgoing stream immediately) |
+| `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
+| `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address |
+| `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address |
+| `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
+| `-v, --verbose` | Increase output verbosity |
 
 **Examples:**
 
@@ -115,33 +124,66 @@ quicpipe connect 192.168.1.100:5000 --retry --retry-interval 5
 
 ### `listen-tcp` - TCP to QUIC Bridge (Server)
 
-Forward incoming QUIC connections to a TCP backend.
+Listen for QUIC connections and forward them to a TCP backend. Acts as a QUIC-to-TCP bridge, forwarding each incoming QUIC stream to a new TCP connection.
 
 ```bash
-quicpipe listen-tcp --host <HOST:PORT> [OPTIONS]
+quicpipe listen-tcp [OPTIONS] -b <HOST:PORT>
 ```
 
-**Example:**
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-b, --backend <HOST:PORT>` | TCP backend address to forward connections to (e.g., `localhost:22`) |
+| `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
+| `-s, --handshake <STRING>` | Custom handshake for authentication |
+| `-v, --verbose` | Increase output verbosity |
+| `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address |
+| `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address |
+| `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
+
+**Examples:**
 ```bash
 # Forward QUIC connections to local SSH server
-quicpipe listen-tcp -p 5000 --host localhost:22
+quicpipe listen-tcp -p 5000 --backend localhost:22
+
+# Forward to a web service on another host
+quicpipe listen-tcp -p 5000 --backend 192.168.1.10:8080
 ```
 
 ### `connect-tcp` - QUIC to TCP Bridge (Client)
 
-Listen on TCP and forward connections through QUIC.
+Connect to a QUIC server and expose it as a local TCP port. Acts as a TCP-to-QUIC bridge, forwarding each incoming TCP connection through a QUIC stream to the remote server.
 
 ```bash
-quicpipe connect-tcp <QUIC_SERVER> --addr <LISTEN_ADDR> [OPTIONS]
+quicpipe connect-tcp [OPTIONS] <SERVER> -l <ADDR:PORT>
 ```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `<SERVER>` | QUIC server address to connect to (e.g., `192.168.1.100:5000`) |
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-l, --listen <ADDR:PORT>` | Local TCP address to listen on (e.g., `127.0.0.1:2222` or `0.0.0.0:8080`) |
+| `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
+| `-s, --handshake <STRING>` | Custom handshake for authentication |
+| `-v, --verbose` | Increase output verbosity |
+| `--ipv4-addr <ADDR:PORT>` | Bind QUIC to specific IPv4 address |
+| `--ipv6-addr <[ADDR]:PORT>` | Bind QUIC to specific IPv6 address |
+| `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
 
 **Examples:**
 ```bash
 # Listen on TCP port 2222, forward to QUIC server
-quicpipe connect-tcp 192.168.1.100:5000 --addr 0.0.0.0:2222
+quicpipe connect-tcp 192.168.1.100:5000 --listen 0.0.0.0:2222
+
+# Listen only on localhost
+quicpipe connect-tcp 192.168.1.100:5000 --listen 127.0.0.1:2222
 
 # Listen on IPv6 address
-quicpipe connect-tcp 192.168.1.100:5000 --addr [::1]:2222
+quicpipe connect-tcp 192.168.1.100:5000 --listen [::1]:2222
 ```
 
 ## Use Cases
@@ -166,20 +208,22 @@ cat large_file.tar.gz | quicpipe connect server.example.com:5000
 
 ### Remote Shell Access
 ```bash
-# Server (expose shell - get an adult first!)
-quicpipe listen -p 5000 --once | /bin/bash | quicpipe listen -p 5000
+# Server - expose shell via TCP bridge (ask an adult first!)
+socat TCP-LISTEN:9999,reuseaddr,fork EXEC:/bin/bash &
+quicpipe listen-tcp -p 5000 --backend 127.0.0.1:9999 --handshake "your-secret"
 
 # Client
-quicpipe connect server.example.com:5000
+quicpipe connect-tcp 127.0.0.1:5000 --listen 127.0.0.1:2222 --handshake "your-secret"
+nc 127.0.0.1 2222
 ```
 
 ### SSH over QUIC
 ```bash
 # Server side - forward QUIC to local SSH
-quicpipe listen-tcp -p 5000 --host localhost:22
+quicpipe listen-tcp -p 5000 --backend localhost:22
 
 # Client side - create local TCP port that forwards to QUIC
-quicpipe connect-tcp server.example.com:5000 --addr 127.0.0.1:2222
+quicpipe connect-tcp server.example.com:5000 --listen 127.0.0.1:2222
 
 # Connect via SSH
 ssh -p 2222 user@127.0.0.1
@@ -188,10 +232,10 @@ ssh -p 2222 user@127.0.0.1
 ### HTTP Proxy over QUIC
 ```bash
 # Server - forward to local web service
-quicpipe listen-tcp -p 5000 --host localhost:8080
+quicpipe listen-tcp -p 5000 --backend localhost:8080
 
 # Client - expose as local port
-quicpipe connect-tcp server.example.com:5000 --addr 127.0.0.1:9000
+quicpipe connect-tcp server.example.com:5000 --listen 127.0.0.1:9000
 
 # Access the service
 curl http://localhost:9000

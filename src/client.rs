@@ -127,9 +127,9 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
     use std::net::{SocketAddr, ToSocketAddrs};
 
     let addrs = args
-        .addr
+        .listen
         .to_socket_addrs()
-        .map_err(|e| anyhow::anyhow!("invalid host string {}: {}", args.addr, e))?
+        .map_err(|e| anyhow::anyhow!("invalid host string {}: {}", args.listen, e))?
         .collect::<Vec<_>>();
 
     let endpoint =

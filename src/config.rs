@@ -4,18 +4,16 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 
-/// Create a QUIC| between two machines.
+/// QUIC| - Secure QUIC-based data forwarding tool
 ///
-/// One side listens, the other side connects. Both sides are identified by a 32 byte endpoint id.
+/// Create encrypted tunnels between two machines using the QUIC protocol. One side listens for
+/// connections, the other side connects. Data is forwarded bidirectionally through stdin/stdout or
+/// TCP sockets.
 ///
-/// Connecting to a endpoint id is independent of its IP address. QUIC| will try to establish a
-/// direct connection even through NATs and firewalls.
-///
-/// For all subcommands, you can specify a secret key using the _SECRET environment variable. If you
-/// don't, a random one will be generated.
-///
-/// You can also specify a port for the endpoint. If you don't, a random one will be chosen.
+/// Uses TLS 1.3 encryption with self-signed certificates. For authentication, use matching
+/// --handshake values on both sides.
 #[derive(Parser, Debug)]
+#[clap(name = "quicpipe", version)]
 pub struct Args {
     #[clap(subcommand)]
     pub command: Commands,
@@ -23,71 +21,84 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Listen on an endpoint and forward stdin/stdout to the first incoming bidi stream.
+    /// Listen for incoming QUIC connections and forward data to stdin/stdout
+    ///
+    /// Starts a QUIC server that accepts connections and forwards data bidirectionally between the
+    /// remote client and local stdin/stdout. By default, keeps listening for new connections after
+    /// each client disconnects.
     Listen(ListenArgs),
 
-    /// Listen on an endpoint and forward incoming connections to the specified host and port. Every
-    /// incoming bidi stream is forwarded to a new connection.
+    /// Listen for QUIC connections and forward them to a TCP backend
     ///
-    /// As far as the endpoint is concerned, this is listening. But it is connecting to a TCP socket
-    /// for which you have to specify the host and port.
+    /// Acts as a QUIC-to-TCP bridge. Accepts incoming QUIC connections and forwards each
+    /// bidirectional stream to a new TCP connection to the specified backend. Useful for exposing
+    /// TCP services (like SSH) over QUIC.
+    #[clap(name = "listen-tcp")]
     ListenTcp(ListenTcpArgs),
 
-    /// Connect to an endpoint, open a bidi stream, and forward stdin/stdout.
+    /// Connect to a QUIC server and forward stdin/stdout
+    ///
+    /// Connects to a remote QUIC server and forwards data bidirectionally between local
+    /// stdin/stdout and the remote endpoint.
     Connect(ConnectArgs),
 
-    /// Connect to an endpoint, open a bidi stream, and forward stdin/stdout to it.
+    /// Connect to a QUIC server and expose it as a local TCP port
     ///
-    /// As far as the endpoint is concerned, this is connecting. But it is listening on a TCP socket
-    /// for which you have to specify the interface and port.
+    /// Acts as a TCP-to-QUIC bridge. Listens on a local TCP port and forwards each incoming TCP
+    /// connection through a QUIC stream to the remote server. Useful for accessing QUIC-tunneled
+    /// services via standard TCP clients.
+    #[clap(name = "connect-tcp")]
     ConnectTcp(ConnectTcpArgs),
 }
 
 #[derive(Parser, Debug)]
 pub struct CommonArgs {
-    /// The port to listen on. Defaults to a random free port if not specified.
+    /// Port for the QUIC endpoint to bind to
     ///
-    /// This is a simpler alternative to --ipv4-addr and --ipv6-addr.
-    #[clap(short = 'p', long)]
+    /// If not specified, a random available port is used. This is a simpler
+    /// alternative to --ipv4-addr/--ipv6-addr when you only need to set the port.
+    #[clap(short = 'p', long, value_name = "PORT")]
     pub port: Option<u16>,
 
-    /// The IPv4 address that the endpoint will listen on.
+    /// Bind to a specific IPv4 address and port
     ///
-    /// If None, defaults to a random free port, but it can be useful to specify a fixed port, e.g.
-    /// to configure a firewall rule. Takes precedence over --port.
-    #[clap(long, default_value = None)]
+    /// Format: IP:PORT (e.g., 0.0.0.0:5000 or 192.168.1.1:5000).
+    /// Takes precedence over --port. Useful for firewall configuration
+    /// or binding to a specific network interface.
+    #[clap(long, value_name = "ADDR:PORT")]
     pub ipv4_addr: Option<SocketAddrV4>,
 
-    /// The IPv6 address that the endpoint will listen on.
+    /// Bind to a specific IPv6 address and port
     ///
-    /// If None, defaults to a random free port, but it can be useful to specify a fixed port, e.g.
-    /// to configure a firewall rule. Takes precedence over --port.
-    #[clap(long, default_value = None)]
+    /// Format: [IP]:PORT (e.g., [::]:5000 or [::1]:5000).
+    /// Takes precedence over --port. Useful for IPv6-only environments
+    /// or binding to a specific network interface.
+    #[clap(long, value_name = "[ADDR]:PORT")]
     pub ipv6_addr: Option<SocketAddrV6>,
 
-    /// A custom ALPN to use for the endpoint.
+    /// Custom ALPN protocol identifier [default: h3]
     ///
-    /// This is an expert feature that allows dumbpipe to be used to interact with existing iroh
-    /// protocols.
+    /// Advanced option for protocol negotiation. Both sides must use the same ALPN.
+    /// When set, disables the default handshake exchange.
     ///
-    /// When using this option, the connect side must also specify the same ALPN. The listen side
-    /// will not expect a handshake, and the connect side will not send one.
-    ///
-    /// Alpns are byte strings. To specify an utf8 string, prefix it with `utf8:`. Otherwise, it
-    /// will be parsed as a hex string.
-    #[clap(long)]
+    /// Format: hex string by default, or prefix with 'utf8:' for plain text.
+    /// Example: --alpn utf8:myproto or --alpn 6833 (hex for 'h3')
+    #[clap(long, value_name = "ALPN")]
     pub alpn: Option<String>,
 
-    /// The verbosity level. Repeat to increase verbosity.
+    /// Increase output verbosity (can be repeated: -v, -vv, -vvv)
     #[clap(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 
-    /// Custom handshake string to use instead of the default.
+    /// Custom handshake string for authentication [default: ahoy]
     ///
-    /// Both client and server must use the same handshake. The handshake can be specified
-    /// as a plain string or as a hex-encoded string with the 'hex:' prefix.
-    /// For MD5 hash, you can use: hex:d41d8cd98f00b204e9800998ecf8427e
-    #[clap(long)]
+    /// Both client and server must use matching handshakes to connect.
+    /// Use plain text or prefix with 'hex:' for binary data.
+    ///
+    /// Examples:
+    ///   --handshake "my-secret"
+    ///   --handshake "hex:5f4dcc3b5aa765d61d8327deb882cf99"
+    #[clap(short = 's', long, value_name = "STRING")]
     pub handshake: Option<String>,
 }
 
@@ -166,14 +177,15 @@ fn parse_handshake(handshake: &str) -> Result<Vec<u8>> {
 
 #[derive(Parser, Debug)]
 pub struct ListenArgs {
-    /// Immediately close our sending side, indicating that we will not transmit any data
+    /// Only receive data, don't send (close outgoing stream immediately)
     #[clap(long)]
     pub recv_only: bool,
 
-    /// Stop listening after the first connection closes.
+    /// Exit after the first client disconnects
     ///
     /// By default, the server keeps listening for new connections indefinitely.
-    /// With this flag, the server will exit after handling the first connection.
+    /// With this flag, the server exits after handling one connection.
+    /// Useful for one-shot transfers like receiving a file.
     #[clap(long)]
     pub once: bool,
 
@@ -183,8 +195,12 @@ pub struct ListenArgs {
 
 #[derive(Parser, Debug)]
 pub struct ListenTcpArgs {
-    #[clap(long)]
-    pub host: String,
+    /// TCP backend address to forward connections to
+    ///
+    /// Format: HOST:PORT (e.g., localhost:22 or 192.168.1.1:8080).
+    /// Each incoming QUIC stream is forwarded to a new TCP connection.
+    #[clap(short = 'b', long, value_name = "HOST:PORT")]
+    pub backend: String,
 
     #[clap(flatten)]
     pub common: CommonArgs,
@@ -192,14 +208,16 @@ pub struct ListenTcpArgs {
 
 #[derive(Parser, Debug)]
 pub struct ConnectTcpArgs {
-    /// The server address to connect to (e.g., "127.0.0.1:5000")
+    /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
+    #[clap(value_name = "SERVER")]
     pub server_addr: SocketAddr,
 
-    /// The addresses to listen on for incoming tcp connections.
+    /// Local TCP address to listen on for incoming connections
     ///
-    /// To listen on all network interfaces, use 0.0.0.0:12345
-    #[clap(long)]
-    pub addr: String,
+    /// Format: ADDR:PORT (e.g., 127.0.0.1:2222 or 0.0.0.0:8080).
+    /// Use 0.0.0.0 to listen on all network interfaces.
+    #[clap(short = 'l', long, value_name = "ADDR:PORT")]
+    pub listen: String,
 
     #[clap(flatten)]
     pub common: CommonArgs,
@@ -207,22 +225,23 @@ pub struct ConnectTcpArgs {
 
 #[derive(Parser, Debug)]
 pub struct ConnectArgs {
-    /// The server address to connect to (e.g., "127.0.0.1:5000")
+    /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
+    #[clap(value_name = "SERVER")]
     pub server_addr: SocketAddr,
 
-    /// Immediately close our sending side, indicating that we will not transmit any data
+    /// Only receive data, don't send (close outgoing stream immediately)
     #[clap(long)]
     pub recv_only: bool,
 
-    /// Keep trying to connect until server is available.
+    /// Keep retrying until the server becomes available
     ///
-    /// By default, the client fails immediately if the server is not reachable.
-    /// With this flag, the client will retry connecting indefinitely until successful.
+    /// By default, the client fails immediately if the server is unreachable.
+    /// With this flag, retries indefinitely until a connection succeeds.
     #[clap(long)]
     pub retry: bool,
 
-    /// Retry interval in seconds when using --retry (default: 2)
-    #[clap(long, default_value = "2")]
+    /// Seconds between connection retry attempts [default: 2]
+    #[clap(long, default_value = "2", value_name = "SECS")]
     pub retry_interval: u64,
 
     #[clap(flatten)]

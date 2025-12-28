@@ -157,16 +157,16 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
 pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
     use std::net::ToSocketAddrs;
 
-    let addrs = match args.host.to_socket_addrs() {
+    let addrs = match args.backend.to_socket_addrs() {
         Ok(addrs) => addrs.collect::<Vec<_>>(),
-        Err(e) => anyhow::bail!("invalid host string {}: {}", args.host, e),
+        Err(e) => anyhow::bail!("invalid host string {}: {}", args.backend, e),
     };
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?]).await?;
     let local_addr = endpoint.local_addr()?;
 
     // print the local address on stderr so it doesn't interfere with the data itself
     eprintln!("Listening on: {}", local_addr);
-    eprintln!("Forwarding incoming requests to '{}'.", args.host);
+    eprintln!("Forwarding incoming requests to '{}'.", args.backend);
     eprintln!("To connect, use:");
     eprintln!("quicpipe connect {}", local_addr);
 
