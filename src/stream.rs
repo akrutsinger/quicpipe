@@ -1,5 +1,6 @@
 //! Stream forwarding utilities.
 
+use crate::error::is_io_close_error;
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
@@ -46,7 +47,7 @@ pub async fn copy_from_quinn(
                 Ok(size) => Ok(size),
                 Err(e) => {
                     // Check if this is a stream reset error
-                    if is_quinn_reset_error(&e) {
+                    if is_io_close_error(&e) {
                         tracing::debug!("stream finished by peer");
                         Ok(0)
                     } else {
@@ -61,12 +62,6 @@ pub async fn copy_from_quinn(
             Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
         }
     }
-}
-
-/// Check if an IO error is a Quinn stream reset error
-fn is_quinn_reset_error(err: &io::Error) -> bool {
-    let err_str = err.to_string().to_lowercase();
-    err_str.contains("reset") || err_str.contains("stream")
 }
 
 pub fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {

@@ -2,6 +2,7 @@
 
 use crate::config::ListenArgs;
 use crate::endpoint::create_endpoint;
+use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 use anyhow::Result;
 use std::net::SocketAddr;
@@ -21,7 +22,7 @@ async fn handle_connection(
         if let Err(e) = r.read_exact(&mut buf).await {
             // Check if this is a graceful close or reset
             let err: anyhow::Error = e.into();
-            if is_connection_closed(&err) {
+            if is_graceful_close(&err) {
                 tracing::debug!("client disconnected during handshake: {}", err);
                 return Ok(()); // Treat as graceful close
             }
@@ -42,7 +43,7 @@ async fn handle_connection(
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
-            if is_connection_closed(&e) {
+            if is_graceful_close(&e) {
                 tracing::debug!("connection closed: {}", e);
                 Ok(()) // Treat as graceful close
             } else {
@@ -50,17 +51,6 @@ async fn handle_connection(
             }
         }
     }
-}
-
-/// Check if an error represents a graceful connection close or reset.
-fn is_connection_closed(err: &anyhow::Error) -> bool {
-    // Check for common connection closed errors
-    let err_str = err.to_string().to_lowercase();
-    err_str.contains("reset")
-        || err_str.contains("connection closed")
-        || err_str.contains("broken pipe")
-        || err_str.contains("cancelled")
-        || err_str.contains("stream")
 }
 
 /// Listen on an endpoint and forward incoming connections to stdio.

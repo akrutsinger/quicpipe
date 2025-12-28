@@ -6,6 +6,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::config::ConnectArgs;
 use crate::endpoint::create_client_endpoint;
+use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 
 /// Attempt to connect with retry logic
@@ -107,12 +108,7 @@ pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
-            let err_str = e.to_string().to_lowercase();
-            if err_str.contains("cancelled")
-                || err_str.contains("interrupted")
-                || err_str.contains("reset")
-            {
-                // Normal disconnection, not an error
+            if is_graceful_close(&e) {
                 tracing::debug!("connection closed: {}", e);
                 Ok(())
             } else {

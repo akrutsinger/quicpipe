@@ -5,6 +5,7 @@ use clap::Parser;
 mod client;
 mod config;
 mod endpoint;
+mod error;
 mod server;
 mod stream;
 
