@@ -58,7 +58,10 @@ impl ServerCertVerifier for SkipServerVerification {
 }
 
 /// Creates a QUIC server config with a self-signed certificate.
-pub fn configure_server(alpns: Vec<Vec<u8>>) -> Result<(quinn::ServerConfig, Vec<u8>)> {
+pub fn configure_server(
+    alpns: Vec<Vec<u8>>,
+    idle_timeout_s: u64,
+) -> Result<(quinn::ServerConfig, Vec<u8>)> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
     let cert_der = cert.cert.der().to_vec();
     let priv_key = PrivateKeyDer::try_from(cert.signing_key.serialize_der())
@@ -76,14 +79,16 @@ pub fn configure_server(alpns: Vec<Vec<u8>>) -> Result<(quinn::ServerConfig, Vec
     ));
     let transport_config = std::sync::Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_concurrent_uni_streams(0_u8.into());
-    // Set the idle timeout to higher values
-    transport_config.max_idle_timeout(Some(std::time::Duration::from_secs(5 * 60).try_into()?));
+
+    transport_config.max_idle_timeout(Some(
+        std::time::Duration::from_secs(idle_timeout_s).try_into()?,
+    ));
 
     Ok((server_config, cert_der))
 }
 
 /// Creates a QUIC client config that skips certificate verification.
-pub fn configure_client(alpns: Vec<Vec<u8>>) -> Result<quinn::ClientConfig> {
+pub fn configure_client(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quinn::ClientConfig> {
     let mut crypto = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(SkipServerVerification::new())
@@ -91,9 +96,10 @@ pub fn configure_client(alpns: Vec<Vec<u8>>) -> Result<quinn::ClientConfig> {
 
     crypto.alpn_protocols = alpns;
 
-    // Set timeout to 5min
     let mut transport_config = quinn::TransportConfig::default();
-    transport_config.max_idle_timeout(Some(std::time::Duration::from_secs(5 * 60).try_into()?));
+    transport_config.max_idle_timeout(Some(
+        std::time::Duration::from_secs(idle_timeout_s).try_into()?,
+    ));
 
     let mut client_config = quinn::ClientConfig::new(std::sync::Arc::new(
         quinn::crypto::rustls::QuicClientConfig::try_from(crypto)?,
@@ -107,8 +113,8 @@ pub fn configure_client(alpns: Vec<Vec<u8>>) -> Result<quinn::ClientConfig> {
 pub async fn create_endpoint(common: &CommonArgs, alpns: Vec<Vec<u8>>) -> Result<Endpoint> {
     let bind_addr = common.bind_addr();
 
-    let (server_config, _cert_der) = configure_server(alpns.clone())?;
-    let client_config = configure_client(alpns)?;
+    let (server_config, _cert_der) = configure_server(alpns.clone(), common.idle_timeout_s)?;
+    let client_config = configure_client(alpns, common.idle_timeout_s)?;
 
     // Create and bind the endpoint
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;
@@ -129,8 +135,8 @@ pub async fn create_client_endpoint(
 ) -> Result<Endpoint> {
     let bind_addr = common.bind_addr_for_target(target);
 
-    let (server_config, _cert_der) = configure_server(alpns.clone())?;
-    let client_config = configure_client(alpns)?;
+    let (server_config, _cert_der) = configure_server(alpns.clone(), common.idle_timeout_s)?;
+    let client_config = configure_client(alpns, common.idle_timeout_s)?;
 
     // Create and bind the endpoint with both server and client capabilities
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;

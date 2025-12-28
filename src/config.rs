@@ -100,6 +100,12 @@ pub struct CommonArgs {
     ///   --handshake "hex:5f4dcc3b5aa765d61d8327deb882cf99"
     #[clap(short = 's', long, value_name = "STRING")]
     pub handshake: Option<String>,
+
+    /// Connection idle timeout in seconds [default: 300]
+    ///
+    /// Use 0 for infinite timeout, but know this could completely hang your connections.
+    #[clap(long, default_value = "300", value_name = "SECS")]
+    pub idle_timeout_s: u64,
 }
 
 impl CommonArgs {
