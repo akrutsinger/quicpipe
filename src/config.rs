@@ -160,19 +160,37 @@ impl CommonArgs {
 }
 
 fn parse_alpn(alpn: &str) -> Result<Vec<u8>> {
-    Ok(if let Some(text) = alpn.strip_prefix("utf8:") {
+    let bytes = if let Some(text) = alpn.strip_prefix("utf8:") {
         text.as_bytes().to_vec()
     } else {
         hex::decode(alpn)?
-    })
+    };
+
+    anyhow::ensure!(
+        bytes.len() <= quicpipe::MAX_ALPN_LENGTH,
+        "ALPN too long: {} bytes (max {})",
+        bytes.len(),
+        quicpipe::MAX_ALPN_LENGTH
+    );
+
+    Ok(bytes)
 }
 
 fn parse_handshake(handshake: &str) -> Result<Vec<u8>> {
-    Ok(if let Some(hex_str) = handshake.strip_prefix("hex:") {
+    let bytes = if let Some(hex_str) = handshake.strip_prefix("hex:") {
         hex::decode(hex_str)?
     } else {
         handshake.as_bytes().to_vec()
-    })
+    };
+
+    anyhow::ensure!(
+        bytes.len() <= quicpipe::MAX_HANDSHAKE_SIZE,
+        "handshake too large: {} bytes (max {})",
+        bytes.len(),
+        quicpipe::MAX_HANDSHAKE_SIZE
+    );
+
+    Ok(bytes)
 }
 
 #[derive(Parser, Debug)]
