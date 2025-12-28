@@ -26,6 +26,13 @@ async fn connect_with_retry(
     eprintln!();
 
     loop {
+        if args.max_retries > 0 && attempt > args.max_retries {
+            return Err(anyhow::anyhow!(
+                "Failed to connect after {} attempts",
+                args.max_retries
+            ));
+        }
+
         tracing::info!("Connection attempt {} to {}", attempt, args.server_addr);
         eprintln!(
             "🔌 Attempt {}: Connecting to {}...",

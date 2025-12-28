@@ -262,6 +262,10 @@ pub struct ConnectArgs {
     #[clap(long, default_value = "2", value_name = "SECS")]
     pub retry_interval: u64,
 
+    /// Maximum retry attempts (0 = unlimited) [default: 0]
+    #[clap(long, default_value = "0", value_name = "COUNT")]
+    pub max_retries: u32,
+
     #[clap(flatten)]
     pub common: CommonArgs,
 }
