@@ -1,9 +1,10 @@
 //! Stream forwarding utilities.
 
-use crate::error::is_io_close_error;
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
+
+use crate::error::is_io_close_error;
 
 /// Copy from a reader to a quinn stream.
 ///

@@ -1,6 +1,7 @@
 //! Client-side logic for connecting to servers.
 
 use anyhow::Result;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
@@ -8,6 +9,37 @@ use crate::config::ConnectArgs;
 use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
+
+/// Handle a single TCP connection by forwarding it to the QUIC server.
+async fn handle_tcp_connection(
+    tcp_stream: tokio::net::TcpStream,
+    tcp_addr: SocketAddr,
+    server_addr: SocketAddr,
+    endpoint: quinn::Endpoint,
+    is_custom_alpn: bool,
+    handshake: Vec<u8>,
+) -> Result<()> {
+    let (tcp_recv, tcp_send) = tcp_stream.into_split();
+    tracing::info!("got tcp connection from {}", tcp_addr);
+
+    let connection = endpoint
+        .connect(server_addr, "localhost")?
+        .await
+        .map_err(|e| anyhow::anyhow!("error connecting to {}: {}", server_addr, e))?;
+
+    let (mut quic_send, quic_recv) = connection
+        .open_bi()
+        .await
+        .map_err(|e| anyhow::anyhow!("error opening bidi stream to {}: {}", server_addr, e))?;
+
+    // Send the handshake unless we are using a custom ALPN
+    if !is_custom_alpn {
+        quic_send.write_all(&handshake).await?;
+    }
+
+    forward_bidi(tcp_recv, tcp_send, quic_recv, quic_send).await?;
+    Ok(())
+}
 
 /// Attempt to connect with retry logic
 async fn connect_with_retry(
@@ -131,8 +163,6 @@ pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
 
 /// Listens on a TCP port and forwards incoming connections to a QUIC endpoint.
 pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
-    use std::net::{SocketAddr, ToSocketAddrs};
-
     let addrs = args
         .listen
         .to_socket_addrs()
@@ -156,36 +186,6 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
         "Forwarding incoming TCP connections to QUIC endpoint: {}",
         args.server_addr
     );
-
-    async fn handle_tcp_connection(
-        tcp_stream: tokio::net::TcpStream,
-        tcp_addr: SocketAddr,
-        server_addr: SocketAddr,
-        endpoint: quinn::Endpoint,
-        is_custom_alpn: bool,
-        handshake: Vec<u8>,
-    ) -> Result<()> {
-        let (tcp_recv, tcp_send) = tcp_stream.into_split();
-        tracing::info!("got tcp connection from {}", tcp_addr);
-
-        let connection = endpoint
-            .connect(server_addr, "localhost")?
-            .await
-            .map_err(|e| anyhow::anyhow!("error connecting to {}: {}", server_addr, e))?;
-
-        let (mut quic_send, quic_recv) = connection
-            .open_bi()
-            .await
-            .map_err(|e| anyhow::anyhow!("error opening bidi stream to {}: {}", server_addr, e))?;
-
-        // send the handshake unless we are using a custom alpn
-        if !is_custom_alpn {
-            quic_send.write_all(&handshake).await?;
-        }
-
-        forward_bidi(tcp_recv, tcp_send, quic_recv, quic_send).await?;
-        Ok(())
-    }
 
     loop {
         let next = tokio::select! {

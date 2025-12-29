@@ -1,11 +1,12 @@
 //! Server-side logic for listening and accepting connections.
 
+use anyhow::Result;
+use std::net::{SocketAddr, ToSocketAddrs};
+
 use crate::config::ListenArgs;
 use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
-use anyhow::Result;
-use std::net::SocketAddr;
 
 /// Handle a single connection from a client.
 async fn handle_connection(
@@ -59,6 +60,39 @@ async fn handle_connection(
             }
         }
     }
+}
+
+/// Handle an incoming QUIC connection by forwarding it to a TCP backend.
+async fn handle_quic_connection(
+    connection: quinn::Connection,
+    addrs: Vec<SocketAddr>,
+    is_custom_alpn: bool,
+    handshake: Vec<u8>,
+) -> Result<()> {
+    let remote_addr = connection.remote_address();
+    tracing::info!("got connection from {}", remote_addr);
+
+    let (s, mut r) = connection
+        .accept_bi()
+        .await
+        .map_err(|e| anyhow::anyhow!("error accepting stream: {}", e))?;
+    tracing::info!("accepted bidi stream from {}", remote_addr);
+
+    if !is_custom_alpn {
+        // Read the handshake and verify it
+        let mut buf = vec![0u8; handshake.len()];
+        r.read_exact(&mut buf).await?;
+        anyhow::ensure!(buf == handshake, "invalid handshake");
+    }
+
+    let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
+        .await
+        .map_err(|e| anyhow::anyhow!("error connecting to {:?}: {}", addrs, e))?;
+    tracing::info!("connected to TCP {:?}", addrs);
+
+    let (read, write) = tcp_stream.into_split();
+    forward_bidi(read, write, r, s).await?;
+    Ok(())
 }
 
 /// Listen on an endpoint and forward incoming connections to stdio.
@@ -147,10 +181,8 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
     Ok(())
 }
 
-/// Listen on an endpoint and forward incoming connections to a tcp socket.
+/// Listen on an endpoint and forward incoming connections to a TCP socket.
 pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
-    use std::net::ToSocketAddrs;
-
     let addrs = match args.backend.to_socket_addrs() {
         Ok(addrs) => addrs.collect::<Vec<_>>(),
         Err(e) => anyhow::bail!("invalid host string {}: {}", args.backend, e),
@@ -158,44 +190,11 @@ pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
-    // print the local address on stderr so it doesn't interfere with the data itself
+    // Print the local address on stderr so it doesn't interfere with the data itself
     eprintln!("Listening on: {}", local_addr);
     eprintln!("Forwarding incoming requests to '{}'.", args.backend);
     eprintln!("To connect, use:");
     eprintln!("quicpipe connect {}", local_addr);
-
-    // handle a new incoming connection on the endpoint
-    async fn handle_quic_connection(
-        connection: quinn::Connection,
-        addrs: Vec<std::net::SocketAddr>,
-        is_custom_alpn: bool,
-        handshake: Vec<u8>,
-    ) -> Result<()> {
-        let remote_addr = connection.remote_address();
-        tracing::info!("got connection from {}", remote_addr);
-
-        let (s, mut r) = connection
-            .accept_bi()
-            .await
-            .map_err(|e| anyhow::anyhow!("error accepting stream: {}", e))?;
-        tracing::info!("accepted bidi stream from {}", remote_addr);
-
-        if !is_custom_alpn {
-            // read the handshake and verify it
-            let mut buf = vec![0u8; handshake.len()];
-            r.read_exact(&mut buf).await?;
-            anyhow::ensure!(buf == handshake, "invalid handshake");
-        }
-
-        let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
-            .await
-            .map_err(|e| anyhow::anyhow!("error connecting to {:?}: {}", addrs, e))?;
-        tracing::info!("connected to TCP {:?}", addrs);
-
-        let (read, write) = tcp_stream.into_split();
-        forward_bidi(read, write, r, s).await?;
-        Ok(())
-    }
 
     loop {
         let connecting = tokio::select! {
