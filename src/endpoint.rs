@@ -58,10 +58,7 @@ impl ServerCertVerifier for SkipServerVerification {
 }
 
 /// Creates a QUIC server config with a self-signed certificate.
-pub fn configure_server(
-    alpns: Vec<Vec<u8>>,
-    idle_timeout_s: u64,
-) -> Result<(quinn::ServerConfig, Vec<u8>)> {
+pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quinn::ServerConfig> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
     let cert_der = cert.cert.der().to_vec();
     let priv_key = PrivateKeyDer::try_from(cert.signing_key.serialize_der())
@@ -84,7 +81,7 @@ pub fn configure_server(
         std::time::Duration::from_secs(idle_timeout_s).try_into()?,
     ));
 
-    Ok((server_config, cert_der))
+    Ok(server_config)
 }
 
 /// Creates a QUIC client config that skips certificate verification.
@@ -121,7 +118,7 @@ pub async fn create_endpoint(
         None => common.bind_addr(),
     };
 
-    let (server_config, _cert_der) = configure_server(alpns.clone(), common.idle_timeout_s)?;
+    let server_config = configure_server(alpns.clone(), common.idle_timeout_s)?;
     let client_config = configure_client(alpns, common.idle_timeout_s)?;
 
     // Create and bind the endpoint with both server and client capabilities
