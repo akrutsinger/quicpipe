@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 use crate::config::ConnectArgs;
-use crate::endpoint::create_client_endpoint;
+use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 
@@ -73,8 +73,12 @@ async fn connect_with_retry(
 
 /// Connects to a QUIC server and forwards stdin/stdout over a bidirectional stream.
 pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
-    let endpoint =
-        create_client_endpoint(&args.common, vec![args.common.alpn()?], args.server_addr).await?;
+    let endpoint = create_endpoint(
+        &args.common,
+        vec![args.common.alpn()?],
+        Some(args.server_addr),
+    )
+    .await?;
 
     // Connect to the remote server with retry logic
     let connection = if args.retry {
@@ -135,8 +139,12 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("invalid host string {}: {}", args.listen, e))?
         .collect::<Vec<_>>();
 
-    let endpoint =
-        create_client_endpoint(&args.common, vec![args.common.alpn()?], args.server_addr).await?;
+    let endpoint = create_endpoint(
+        &args.common,
+        vec![args.common.alpn()?],
+        Some(args.server_addr),
+    )
+    .await?;
 
     let tcp_listener = tokio::net::TcpListener::bind(addrs.as_slice())
         .await

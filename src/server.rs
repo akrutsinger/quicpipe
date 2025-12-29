@@ -63,7 +63,7 @@ async fn handle_connection(
 
 /// Listen on an endpoint and forward incoming connections to stdio.
 pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
-    let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?]).await?;
+    let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
     // print the local address on stderr so it doesn't interfere with the data itself
@@ -155,7 +155,7 @@ pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
         Ok(addrs) => addrs.collect::<Vec<_>>(),
         Err(e) => anyhow::bail!("invalid host string {}: {}", args.backend, e),
     };
-    let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?]).await?;
+    let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
     // print the local address on stderr so it doesn't interfere with the data itself

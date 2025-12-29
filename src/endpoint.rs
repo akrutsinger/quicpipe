@@ -109,31 +109,17 @@ pub fn configure_client(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
     Ok(client_config)
 }
 
-/// Creates a QUIC endpoint with both server and client capabilities.
-pub async fn create_endpoint(common: &CommonArgs, alpns: Vec<Vec<u8>>) -> Result<Endpoint> {
-    let bind_addr = common.bind_addr();
-
-    let (server_config, _cert_der) = configure_server(alpns.clone(), common.idle_timeout_s)?;
-    let client_config = configure_client(alpns, common.idle_timeout_s)?;
-
-    // Create and bind the endpoint
-    let mut endpoint = Endpoint::server(server_config, bind_addr)?;
-    endpoint.set_default_client_config(client_config);
-
-    Ok(endpoint)
-}
-
-/// Creates a QUIC endpoint bound to an address matching the target's IP version.
-///
-/// Even though this is indeed a client endpoint, it is created with both server and client
-/// capabilities to allow for flexibility in usage (e.g., accepting incoming connections if needed)
-/// to support various QUIC functionality like hole punching and connection migration.
-pub async fn create_client_endpoint(
+/// Creates a QUIC endpoint with server and client capabilities. If `target` is provided, match the
+/// target's IP version for binding.
+pub async fn create_endpoint(
     common: &CommonArgs,
     alpns: Vec<Vec<u8>>,
-    target: std::net::SocketAddr,
+    target: Option<std::net::SocketAddr>,
 ) -> Result<Endpoint> {
-    let bind_addr = common.bind_addr_for_target(target);
+    let bind_addr = match target {
+        Some(t) => common.bind_addr_for_target(t),
+        None => common.bind_addr(),
+    };
 
     let (server_config, _cert_der) = configure_server(alpns.clone(), common.idle_timeout_s)?;
     let client_config = configure_client(alpns, common.idle_timeout_s)?;
