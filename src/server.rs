@@ -96,7 +96,7 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
         };
         let remote_addr = connection.remote_address();
         tracing::info!("got connection from {}", remote_addr);
-        let (s, mut r) = match connection.accept_bi().await {
+        let (s, r) = match connection.accept_bi().await {
             Ok(x) => x,
             Err(cause) => {
                 tracing::warn!("error accepting stream: {}", cause);
@@ -109,20 +109,16 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
         // Handle connection based on --once flag
         if args.once {
             // Handle connection in the main task and then exit
-            if !args.common.is_custom_alpn() {
-                // read the handshake and verify it
-                let handshake = args.common.handshake()?;
-                let mut buf = vec![0u8; handshake.len()];
-                r.read_exact(&mut buf).await?;
-                anyhow::ensure!(buf == handshake, "invalid handshake");
-            }
-            if args.recv_only {
-                tracing::info!("forwarding stdout to {} (ignoring stdin)", remote_addr);
-                forward_bidi(tokio::io::empty(), tokio::io::stdout(), r, s).await?;
-            } else {
-                tracing::info!("forwarding stdin/stdout to {}", remote_addr);
-                forward_bidi(tokio::io::stdin(), tokio::io::stdout(), r, s).await?;
-            }
+            handle_connection(
+                s,
+                r,
+                remote_addr,
+                args.recv_only,
+                args.common.is_custom_alpn(),
+                args.common.handshake()?,
+            )
+            .await?;
+
             // Stop accepting connections after the first successful one
             break;
         } else {
