@@ -55,31 +55,31 @@ pub enum Commands {
 pub struct CommonArgs {
     /// Port for the QUIC endpoint to bind to
     ///
-    /// If not specified, a random available port is used. This is a simpler
-    /// alternative to --ipv4-addr/--ipv6-addr when you only need to set the port.
+    /// If not specified, a random available port is used. This is a simpler alternative to
+    /// --ipv4-addr/--ipv6-addr when you only need to set the port.
     #[clap(short = 'p', long, value_name = "PORT")]
     pub port: Option<u16>,
 
     /// Bind to a specific IPv4 address and port
     ///
     /// Format: IP:PORT (e.g., 0.0.0.0:5000 or 192.168.1.1:5000).
-    /// Takes precedence over --port. Useful for firewall configuration
-    /// or binding to a specific network interface.
+    /// Takes precedence over --port. Useful for firewall configuration or binding to a specific
+    /// network interface.
     #[clap(long, value_name = "ADDR:PORT")]
     pub ipv4_addr: Option<SocketAddrV4>,
 
     /// Bind to a specific IPv6 address and port
     ///
     /// Format: [IP]:PORT (e.g., [::]:5000 or [::1]:5000).
-    /// Takes precedence over --port. Useful for IPv6-only environments
-    /// or binding to a specific network interface.
+    /// Takes precedence over --port. Useful for IPv6-only environments or binding to a specific
+    /// network interface.
     #[clap(long, value_name = "[ADDR]:PORT")]
     pub ipv6_addr: Option<SocketAddrV6>,
 
     /// Custom ALPN protocol identifier [default: h3]
     ///
-    /// Advanced option for protocol negotiation. Both sides must use the same ALPN.
-    /// When set, disables the default handshake exchange.
+    /// Advanced option for protocol negotiation. Both sides must use the same ALPN. When set,
+    /// disables the default handshake exchange.
     ///
     /// Format: hex string by default, or prefix with 'utf8:' for plain text.
     /// Example: --alpn utf8:myproto or --alpn 6833 (hex for 'h3')
@@ -92,8 +92,8 @@ pub struct CommonArgs {
 
     /// Custom handshake string for authentication [default: ahoy]
     ///
-    /// Both client and server must use matching handshakes to connect.
-    /// Use plain text or prefix with 'hex:' for binary data.
+    /// Both client and server must use matching handshakes to connect. Use plain text or prefix
+    /// with 'hex:' for binary data.
     ///
     /// Examples:
     ///   --handshake "my-secret"
@@ -145,8 +145,8 @@ impl CommonArgs {
 
     /// Get a bind address for connecting to a specific remote address.
     ///
-    /// This ensures we bind to an IPv4 address when connecting to IPv4,
-    /// and IPv6 when connecting to IPv6.
+    /// This ensures we bind to an IPv4 address when connecting to IPv4, and IPv6 when connecting to
+    /// IPv6.
     pub fn bind_addr_for_target(&self, target: SocketAddr) -> SocketAddr {
         // If explicit addresses are specified, use them
         if let Some(addr) = self.ipv4_addr {
@@ -207,9 +207,9 @@ pub struct ListenArgs {
 
     /// Exit after the first client disconnects
     ///
-    /// By default, the server keeps listening for new connections indefinitely.
-    /// With this flag, the server exits after handling one connection.
-    /// Useful for one-shot transfers like receiving a file.
+    /// By default, the server keeps listening for new connections indefinitely. With this flag, the
+    /// server exits after handling one connection. Useful for one-shot transfers like receiving a
+    /// file.
     #[clap(long)]
     pub once: bool,
 
@@ -243,6 +243,14 @@ pub struct ConnectTcpArgs {
     #[clap(short = 'l', long, value_name = "ADDR:PORT")]
     pub listen: String,
 
+    /// Disable connection migration on network changes
+    ///
+    /// By default, the connection monitors network interfaces and automatically migrates when the
+    /// local IP address changes (e.g., switching from WiFi to cellular, or IP address renewal).
+    /// Use this flag to disable migration.
+    #[clap(long = "no-migrate", action = clap::ArgAction::SetFalse, default_value = "true")]
+    pub migrate: bool,
+
     #[clap(flatten)]
     pub common: CommonArgs,
 }
@@ -259,8 +267,8 @@ pub struct ConnectArgs {
 
     /// Keep retrying until the server becomes available
     ///
-    /// By default, the client fails immediately if the server is unreachable.
-    /// With this flag, retries indefinitely until a connection succeeds.
+    /// By default, the client fails immediately if the server is unreachable. With this flag,
+    /// retries indefinitely until a connection succeeds.
     #[clap(long)]
     pub retry: bool,
 
@@ -271,6 +279,14 @@ pub struct ConnectArgs {
     /// Maximum retry attempts (0 = unlimited) [default: 0]
     #[clap(long, default_value = "0", value_name = "COUNT")]
     pub max_retries: u32,
+
+    /// Disable connection migration on network changes
+    ///
+    /// By default, the connection monitors network interfaces and automatically migrates when the
+    /// local IP address changes (e.g., switching from WiFi to cellular, or IP address renewal).
+    /// Use this flag to disable migration.
+    #[clap(long = "no-migrate", action = clap::ArgAction::SetFalse, default_value = "true")]
+    pub migrate: bool,
 
     #[clap(flatten)]
     pub common: CommonArgs,

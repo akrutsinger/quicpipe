@@ -8,6 +8,7 @@ use tokio::io::AsyncWriteExt;
 use crate::config::ConnectArgs;
 use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
+use crate::migration;
 use crate::stream::forward_bidi;
 
 /// Handle a single TCP connection by forwarding it to the QUIC server.
@@ -122,6 +123,18 @@ pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
 
     tracing::info!("Connected to {}", args.server_addr);
 
+    // Start migration monitor if enabled
+    let _migration_guard = if args.migrate {
+        tracing::info!("Connection migration enabled");
+        Some(migration::spawn_migration_monitor(
+            endpoint.clone(),
+            args.server_addr,
+            migration::DEFAULT_POLL_INTERVAL,
+        ))
+    } else {
+        None
+    };
+
     // Open a bidirectional stream
     let (mut s, r) = connection.open_bi().await?;
     tracing::info!("Opened bidi stream to {}", args.server_addr);
@@ -175,6 +188,18 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
         Some(args.server_addr),
     )
     .await?;
+
+    // Start migration monitor if enabled
+    let _migration_guard = if args.migrate {
+        tracing::info!("Connection migration enabled");
+        Some(migration::spawn_migration_monitor(
+            endpoint.clone(),
+            args.server_addr,
+            migration::DEFAULT_POLL_INTERVAL,
+        ))
+    } else {
+        None
+    };
 
     let tcp_listener = tokio::net::TcpListener::bind(addrs.as_slice())
         .await

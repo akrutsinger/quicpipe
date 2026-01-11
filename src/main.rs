@@ -6,6 +6,7 @@ mod client;
 mod config;
 mod endpoint;
 mod error;
+mod migration;
 mod server;
 mod stream;
 
