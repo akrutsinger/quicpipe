@@ -14,16 +14,22 @@ use tokio::sync::watch;
 /// Default polling interval for interface changes.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Get all current IP addresses from network interfaces.
-fn get_current_ips() -> HashSet<IpAddr> {
+/// Get current IP addresses matching the given address family.
+fn get_ips_for_family(target: SocketAddr) -> HashSet<IpAddr> {
     if_addrs::get_if_addrs()
-        .map(|ifaces| ifaces.into_iter().map(|iface| iface.ip()).collect())
+        .map(|ifaces| {
+            ifaces
+                .into_iter()
+                .map(|iface| iface.ip())
+                .filter(|ip| {
+                    matches!(
+                        (ip, &target),
+                        (IpAddr::V4(_), SocketAddr::V4(_)) | (IpAddr::V6(_), SocketAddr::V6(_))
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default()
-}
-
-/// Check if a specific IP address is still available on any interface.
-fn is_ip_available(ip: IpAddr) -> bool {
-    get_current_ips().contains(&ip)
 }
 
 /// Get a wildcard bind address matching the IP version of the target.
@@ -54,9 +60,7 @@ pub fn spawn_migration_monitor(
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
 
     tokio::spawn(async move {
-        // Track the last known set of IPs
-        let mut last_ips = get_current_ips();
-        let mut last_local_addr = endpoint.local_addr().ok();
+        let mut last_ips = get_ips_for_family(target);
 
         tracing::debug!(
             "Migration monitor started, tracking {} addresses",
@@ -72,64 +76,34 @@ pub fn spawn_migration_monitor(
                 }
             }
 
-            let current_ips = get_current_ips();
-
-            // Check if the set of IPs has changed
-            if current_ips != last_ips {
-                tracing::info!(
-                    "Network change detected: {} -> {} addresses",
-                    last_ips.len(),
-                    current_ips.len()
-                );
-
-                // Check if our current local address is still valid
-                let local_addr = endpoint.local_addr().ok();
-                let current_local_ip = local_addr.map(|a| a.ip());
-
-                let need_rebind = match current_local_ip {
-                    Some(ip) if !is_ip_available(ip) => {
-                        tracing::info!("Local address {} no longer available", ip);
-                        true
-                    }
-                    _ if current_ips != last_ips => {
-                        // IPs changed - might be on a new network
-                        // Check if we should proactively rebind
-                        let added: HashSet<_> = current_ips.difference(&last_ips).collect();
-                        let removed: HashSet<_> = last_ips.difference(&current_ips).collect();
-
-                        tracing::debug!("IP changes - added: {:?}, removed: {:?}", added, removed);
-
-                        // Rebind if our local address was removed or if significant changes
-                        !removed.is_empty()
-                    }
-                    _ => false,
-                };
-
-                if need_rebind {
-                    let new_addr = wildcard_bind_addr(target);
-                    match std::net::UdpSocket::bind(new_addr) {
-                        Ok(socket) => match endpoint.rebind(socket) {
-                            Ok(()) => {
-                                let new_local = endpoint.local_addr().ok();
-                                tracing::info!(
-                                    "Connection migration: {:?} -> {:?}",
-                                    last_local_addr,
-                                    new_local
-                                );
-                                last_local_addr = new_local;
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to rebind endpoint: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!("Failed to bind new socket to {}: {}", new_addr, e);
-                        }
-                    }
-                }
-
-                last_ips = current_ips;
+            let current_ips = get_ips_for_family(target);
+            if current_ips == last_ips {
+                continue;
             }
+
+            let removed: Vec<_> = last_ips.difference(&current_ips).collect();
+            let added: Vec<_> = current_ips.difference(&last_ips).collect();
+            tracing::debug!("IP changes - added: {:?}, removed: {:?}", added, removed);
+
+            if !removed.is_empty() {
+                let old_local = endpoint.local_addr().ok();
+                let new_addr = wildcard_bind_addr(target);
+                match std::net::UdpSocket::bind(new_addr) {
+                    Ok(socket) => match endpoint.rebind(socket) {
+                        Ok(()) => {
+                            tracing::info!(
+                                "Connection migration: {:?} -> {:?}",
+                                old_local,
+                                endpoint.local_addr().ok()
+                            );
+                        }
+                        Err(e) => tracing::warn!("Failed to rebind endpoint: {}", e),
+                    },
+                    Err(e) => tracing::warn!("Failed to bind new socket to {}: {}", new_addr, e),
+                }
+            }
+
+            last_ips = current_ips;
         }
     });
 
