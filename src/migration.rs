@@ -44,6 +44,56 @@ fn wildcard_bind_addr(target: SocketAddr) -> SocketAddr {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wildcard_bind_addr_v4() {
+        let target: SocketAddr = "1.2.3.4:443".parse().unwrap();
+        let addr = wildcard_bind_addr(target);
+        assert!(addr.ip().is_unspecified());
+        assert!(addr.is_ipv4());
+        assert_eq!(addr.port(), 0);
+    }
+
+    #[test]
+    fn wildcard_bind_addr_v6() {
+        let target: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+        let addr = wildcard_bind_addr(target);
+        assert!(addr.ip().is_unspecified());
+        assert!(addr.is_ipv6());
+        assert_eq!(addr.port(), 0);
+    }
+
+    #[test]
+    fn get_ips_filters_by_family() {
+        let v4_target: SocketAddr = "1.2.3.4:443".parse().unwrap();
+        let v6_target: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+
+        let v4_ips = get_ips_for_family(v4_target);
+        let v6_ips = get_ips_for_family(v6_target);
+
+        for ip in &v4_ips {
+            assert!(ip.is_ipv4(), "expected only v4 addrs, got {}", ip);
+        }
+        for ip in &v6_ips {
+            assert!(ip.is_ipv6(), "expected only v6 addrs, got {}", ip);
+        }
+    }
+
+    #[test]
+    fn get_ips_includes_loopback() {
+        let target: SocketAddr = "127.0.0.1:443".parse().unwrap();
+        let ips = get_ips_for_family(target);
+        assert!(
+            ips.contains(&IpAddr::from([127, 0, 0, 1])),
+            "should include loopback, got {:?}",
+            ips
+        );
+    }
+}
+
 /// Spawns a task that monitors network interfaces and triggers rebind when changes occur.
 ///
 /// Returns a shutdown sender that can be used to stop the monitoring task.

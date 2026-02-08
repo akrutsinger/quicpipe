@@ -432,6 +432,81 @@ fn test_handshake_hex() {
 }
 
 #[test]
+fn connect_listen_with_migration() {
+    let listen_to_connect = b"hello from listen";
+    let connect_to_listen = b"hello from connect";
+    let port = random_port();
+
+    let listen = duct::cmd(
+        quicpipe_bin(),
+        ["listen", "-p", &port.to_string(), "--once"],
+    )
+    .env_remove("RUST_LOG")
+    .stdin_bytes(listen_to_connect)
+    .stderr_null()
+    .stdout_capture()
+    .start()
+    .unwrap();
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Connect with migration explicitly enabled (it's the default, but be explicit)
+    let connect = duct::cmd(quicpipe_bin(), ["connect", &format!("127.0.0.1:{}", port)])
+        .env_remove("RUST_LOG")
+        .stdin_bytes(connect_to_listen)
+        .stderr_null()
+        .stdout_capture()
+        .run()
+        .unwrap();
+
+    assert!(connect.status.success(), "connect with migration failed");
+    assert_eq!(&connect.stdout, listen_to_connect);
+
+    let listen_output = listen.wait().unwrap();
+    assert!(listen_output.status.success(), "listen failed");
+    assert_eq!(&listen_output.stdout, connect_to_listen);
+}
+
+#[test]
+fn connect_listen_no_migration() {
+    let listen_to_connect = b"hello from listen";
+    let connect_to_listen = b"hello from connect";
+    let port = random_port();
+
+    let listen = duct::cmd(
+        quicpipe_bin(),
+        ["listen", "-p", &port.to_string(), "--once"],
+    )
+    .env_remove("RUST_LOG")
+    .stdin_bytes(listen_to_connect)
+    .stderr_null()
+    .stdout_capture()
+    .start()
+    .unwrap();
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Connect with migration disabled
+    let connect = duct::cmd(
+        quicpipe_bin(),
+        ["connect", &format!("127.0.0.1:{}", port), "--no-migrate"],
+    )
+    .env_remove("RUST_LOG")
+    .stdin_bytes(connect_to_listen)
+    .stderr_null()
+    .stdout_capture()
+    .run()
+    .unwrap();
+
+    assert!(connect.status.success(), "connect without migration failed");
+    assert_eq!(&connect.stdout, listen_to_connect);
+
+    let listen_output = listen.wait().unwrap();
+    assert!(listen_output.status.success(), "listen failed");
+    assert_eq!(&listen_output.stdout, connect_to_listen);
+}
+
+#[test]
 fn test_recv_only_listen() {
     let port = random_port();
 
