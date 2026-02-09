@@ -9,6 +9,7 @@ QUICpipe is a simple, secure QUIC-based data forwarding tool for creating encryp
 - **Custom Handshakes**: Support for custom handshake strings (including hex-encoded)
 - **Port Specification**: Easy port configuration with `-p` flag
 - **Forwarding**: Supports stdin/stdout or TCP forwarding
+- **Connection Migration**: Supports QUIC's connection migration by default (can be disabled)
 
 ## Installation
 
@@ -100,6 +101,7 @@ quicpipe connect [OPTIONS] <SERVER>
 | `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
 | `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address |
 | `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address |
+| `--no-migrate` | Disable automatic connection migration on network changes |
 | `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
 | `-v, --verbose` | Increase output verbosity |
 
@@ -172,6 +174,7 @@ quicpipe connect-tcp [OPTIONS] <SERVER> -l <ADDR:PORT>
 | `-v, --verbose` | Increase output verbosity |
 | `--ipv4-addr <ADDR:PORT>` | Bind QUIC to specific IPv4 address |
 | `--ipv6-addr <[ADDR]:PORT>` | Bind QUIC to specific IPv6 address |
+| `--no-migrate` | Disable automatic connection migration on network changes |
 | `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
 
 **Examples:**
