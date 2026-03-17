@@ -99,9 +99,10 @@ pub async fn forward_bidi(
         io::Result::Ok(())
     });
 
-    // Wait for both tasks and handle errors gracefully
-    let stdout_result = forward_to_stdout.await?;
-    let stdin_result = forward_from_stdin.await?;
+    // Wait for both tasks concurrently so neither blocks the other
+    let (stdout_result, stdin_result) = tokio::join!(forward_to_stdout, forward_from_stdin);
+    let stdout_result = stdout_result?;
+    let stdin_result = stdin_result?;
 
     // Check if either failed with a non-cancellation error
     match (stdout_result, stdin_result) {
