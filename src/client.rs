@@ -11,27 +11,21 @@ use crate::error::is_graceful_close;
 use crate::migration;
 use crate::stream::forward_bidi;
 
-/// Handle a single TCP connection by forwarding it to the QUIC server.
+/// Handle a single TCP connection by opening a new bidi stream on the existing QUIC connection.
 async fn handle_tcp_connection(
     tcp_stream: tokio::net::TcpStream,
     tcp_addr: SocketAddr,
-    server_addr: SocketAddr,
-    endpoint: quinn::Endpoint,
+    connection: quinn::Connection,
     is_custom_alpn: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
     let (tcp_recv, tcp_send) = tcp_stream.into_split();
     tracing::info!("got tcp connection from {}", tcp_addr);
 
-    let connection = endpoint
-        .connect(server_addr, "localhost")?
-        .await
-        .map_err(|e| anyhow::anyhow!("error connecting to {}: {}", server_addr, e))?;
-
     let (mut quic_send, quic_recv) = connection
         .open_bi()
         .await
-        .map_err(|e| anyhow::anyhow!("error opening bidi stream to {}: {}", server_addr, e))?;
+        .map_err(|e| anyhow::anyhow!("error opening bidi stream: {}", e))?;
 
     // Send the handshake unless we are using a custom ALPN
     if !is_custom_alpn {
@@ -205,6 +199,13 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("error binding tcp socket to {:?}: {}", addrs, e))?;
 
+    // Establish a single QUIC connection upfront and multiplex streams over it
+    let connection = endpoint
+        .connect(args.server_addr, "localhost")?
+        .await
+        .map_err(|e| anyhow::anyhow!("error connecting to {}: {}", args.server_addr, e))?;
+    tracing::info!("Connected to {}", args.server_addr);
+
     let local_addr = tcp_listener.local_addr()?;
     eprintln!("TCP listening on: {}", local_addr);
     eprintln!(
@@ -229,25 +230,15 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
             }
         };
 
-        let endpoint = endpoint.clone();
-        let server_addr = args.server_addr;
+        let connection = connection.clone();
         let is_custom_alpn = args.common.is_custom_alpn();
         let handshake = args.common.handshake()?;
 
         tokio::spawn(async move {
-            if let Err(cause) = handle_tcp_connection(
-                tcp_stream,
-                tcp_addr,
-                server_addr,
-                endpoint,
-                is_custom_alpn,
-                handshake,
-            )
-            .await
+            if let Err(cause) =
+                handle_tcp_connection(tcp_stream, tcp_addr, connection, is_custom_alpn, handshake)
+                    .await
             {
-                // log error at warn level
-                //
-                // we should know about it, but it's not fatal
                 tracing::warn!("error handling connection: {}", cause);
             }
         });

@@ -62,22 +62,14 @@ async fn handle_connection(
     }
 }
 
-/// Handle an incoming QUIC connection by forwarding it to a TCP backend.
-async fn handle_quic_connection(
-    connection: quinn::Connection,
+/// Handle a single bidi stream by forwarding it to a TCP backend.
+async fn handle_quic_stream(
+    s: quinn::SendStream,
+    mut r: quinn::RecvStream,
     addrs: Vec<SocketAddr>,
     is_custom_alpn: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
-    let remote_addr = connection.remote_address();
-    tracing::info!("got connection from {}", remote_addr);
-
-    let (s, mut r) = connection
-        .accept_bi()
-        .await
-        .map_err(|e| anyhow::anyhow!("error accepting stream: {}", e))?;
-    tracing::info!("accepted bidi stream from {}", remote_addr);
-
     if !is_custom_alpn {
         // Read the handshake and verify it
         let mut buf = vec![0u8; handshake.len()];
@@ -92,6 +84,46 @@ async fn handle_quic_connection(
 
     let (read, write) = tcp_stream.into_split();
     forward_bidi(read, write, r, s).await?;
+    Ok(())
+}
+
+/// Handle an incoming QUIC connection by accepting streams and forwarding each to a TCP backend.
+async fn handle_quic_connection(
+    connection: quinn::Connection,
+    addrs: Vec<SocketAddr>,
+    is_custom_alpn: bool,
+    handshake: Vec<u8>,
+) -> Result<()> {
+    let remote_addr = connection.remote_address();
+    tracing::info!("got connection from {}", remote_addr);
+
+    loop {
+        let (s, r) = match connection.accept_bi().await {
+            Ok(stream) => stream,
+            Err(
+                quinn::ConnectionError::ApplicationClosed(_)
+                | quinn::ConnectionError::ConnectionClosed(_)
+                | quinn::ConnectionError::LocallyClosed,
+            ) => {
+                tracing::debug!("connection from {} closed", remote_addr);
+                break;
+            }
+            Err(e) => {
+                tracing::warn!("error accepting stream from {}: {}", remote_addr, e);
+                break;
+            }
+        };
+        tracing::info!("accepted bidi stream from {}", remote_addr);
+
+        let addrs = addrs.clone();
+        let handshake = handshake.clone();
+        tokio::spawn(async move {
+            if let Err(cause) = handle_quic_stream(s, r, addrs, is_custom_alpn, handshake).await {
+                tracing::warn!("error handling stream: {}", cause);
+            }
+        });
+    }
+
     Ok(())
 }
 
