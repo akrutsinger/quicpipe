@@ -1,0 +1,4 @@
+# Limit test parallelism to avoid resource contention from concurrent QUIC/TLS
+# handshakes in integration tests. Each test spawns multiple processes.
+[env]
+RUST_TEST_THREADS = "2"
