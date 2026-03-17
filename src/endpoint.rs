@@ -77,9 +77,12 @@ pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
     let transport_config = std::sync::Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
-    transport_config.max_idle_timeout(Some(
-        std::time::Duration::from_secs(idle_timeout_s).try_into()?,
-    ));
+    let idle_timeout = if idle_timeout_s == 0 {
+        None
+    } else {
+        Some(std::time::Duration::from_secs(idle_timeout_s).try_into()?)
+    };
+    transport_config.max_idle_timeout(idle_timeout);
 
     Ok(server_config)
 }
@@ -94,9 +97,12 @@ pub fn configure_client(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
     crypto.alpn_protocols = alpns;
 
     let mut transport_config = quinn::TransportConfig::default();
-    transport_config.max_idle_timeout(Some(
-        std::time::Duration::from_secs(idle_timeout_s).try_into()?,
-    ));
+    let idle_timeout = if idle_timeout_s == 0 {
+        None
+    } else {
+        Some(std::time::Duration::from_secs(idle_timeout_s).try_into()?)
+    };
+    transport_config.max_idle_timeout(idle_timeout);
 
     let mut client_config = quinn::ClientConfig::new(std::sync::Arc::new(
         quinn::crypto::rustls::QuicClientConfig::try_from(crypto)?,
