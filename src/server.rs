@@ -140,42 +140,31 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
         };
         tracing::info!("accepted bidi stream from {}", remote_addr);
 
-        // Handle connection based on --once flag
-        if args.once {
-            // Handle connection in the main task and then exit
-            handle_connection(
-                s,
-                r,
-                remote_addr,
-                args.recv_only,
-                args.common.is_custom_alpn(),
-                args.common.handshake()?,
-            )
-            .await?;
-
-            // Stop accepting connections after the first successful one
-            break;
-        } else {
-            // Keep listening mode (default): handle connection in a separate task
-            let recv_only = args.recv_only;
-            let is_custom_alpn = args.common.is_custom_alpn();
-            let handshake = args.common.handshake()?;
-            tokio::spawn(async move {
-                match handle_connection(s, r, remote_addr, recv_only, is_custom_alpn, handshake)
-                    .await
-                {
-                    Ok(_) => {
-                        tracing::info!("connection from {} closed gracefully", remote_addr);
-                    }
-                    Err(e) => {
-                        tracing::error!("error handling connection from {}: {}", remote_addr, e);
-                    }
-                }
-            });
-            // Continue accepting more connections
-            if args.common.verbose > 0 {
-                eprintln!("Ready for next connection...");
+        // Handle connection in the main task (stdin/stdout can't be shared across tasks)
+        match handle_connection(
+            s,
+            r,
+            remote_addr,
+            args.recv_only,
+            args.common.is_custom_alpn(),
+            args.common.handshake()?,
+        )
+        .await
+        {
+            Ok(_) => {
+                tracing::info!("connection from {} closed gracefully", remote_addr);
             }
+            Err(e) => {
+                tracing::error!("error handling connection from {}: {}", remote_addr, e);
+            }
+        }
+
+        if args.once {
+            break;
+        }
+
+        if args.common.verbose > 0 {
+            eprintln!("Ready for next connection...");
         }
     }
     Ok(())
