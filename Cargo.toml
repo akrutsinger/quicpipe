@@ -6,24 +6,23 @@ readme = "README.md"
 keywords = ["cli", "network"]
 
 [dependencies]
-anyhow = { version = "1.0.100", default-features = false }
-clap = { version = "4.5.51", default-features = false, features = ["derive", "std", "help", "usage"] }
-hex = { version = "0.4.3" }
-tracing = { version = "0.1.41", default-features = false }
-tracing-subscriber = { version = "0.3.20", default-features = false, features = ["fmt"] }
-tokio = { version = "1.34.0", default-features = false, features = ["rt-multi-thread", "macros", "io-std", "io-util", "time", "signal", "net"] }
-tokio-util = { version = "0.7.17", default-features = false }
+anyhow = { version = "1.0", default-features = false }
+clap = { version = "4.5", default-features = false, features = ["derive", "std", "help", "usage"] }
+hex = { version = "0.4" }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+tokio = { version = "1.34", default-features = false, features = ["rt-multi-thread", "macros", "io-std", "io-util", "time", "signal", "net"] }
+tokio-util = { version = "0.7", default-features = false }
 
 # QUIC
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 rustls = { version = "0.23" , default-features = false, features = ["ring"] }
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
-rustls-pemfile = "2.2"
-if-addrs = "0.14.0"
+if-addrs = "0.15"
 
 [dev-dependencies]
-duct = "0.13"
-nix = { version = "0.29", features = ["signal", "process"] }
+duct = "1.1"
+nix = { version = "0.31", features = ["signal", "process"] }
 tempfile = "3.8"
 
 [profile.dev]
