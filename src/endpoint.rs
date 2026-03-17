@@ -74,7 +74,8 @@ pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
     let mut server_config = quinn::ServerConfig::with_crypto(std::sync::Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)?,
     ));
-    let transport_config = std::sync::Arc::get_mut(&mut server_config.transport).unwrap();
+    let transport_config = std::sync::Arc::get_mut(&mut server_config.transport)
+        .expect("server config just created, no other references exist");
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
     let idle_timeout = if idle_timeout_s == 0 {
