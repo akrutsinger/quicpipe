@@ -63,7 +63,7 @@ pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
     let cert_der = cert.cert.der().to_vec();
     let priv_key = PrivateKeyDer::try_from(cert.signing_key.serialize_der())
         .map_err(|e| anyhow::anyhow!("Failed to serialize private key: {}", e))?;
-    let cert_chain = vec![CertificateDer::from(cert_der.clone())];
+    let cert_chain = vec![CertificateDer::from(cert_der)];
 
     let mut server_crypto = rustls::ServerConfig::builder()
         .with_no_client_auth()
