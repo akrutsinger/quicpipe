@@ -10,7 +10,6 @@ pub fn is_io_close_error(err: &io::Error) -> bool {
             | io::ErrorKind::ConnectionAborted
             | io::ErrorKind::BrokenPipe
             | io::ErrorKind::UnexpectedEof
-            | io::ErrorKind::Interrupted
     )
 }
 

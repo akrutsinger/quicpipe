@@ -119,7 +119,11 @@ async fn handle_quic_connection(
         let handshake = handshake.clone();
         tokio::spawn(async move {
             if let Err(cause) = handle_quic_stream(s, r, addrs, is_custom_alpn, handshake).await {
-                tracing::warn!("error handling stream: {}", cause);
+                if is_graceful_close(&cause) {
+                    tracing::debug!("stream closed: {}", cause);
+                } else {
+                    tracing::warn!("error handling stream: {}", cause);
+                }
             }
         });
     }
