@@ -8,36 +8,49 @@ use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 
+/// Read a length-prefixed handshake from a QUIC stream and verify it.
+async fn read_and_verify_handshake(r: &mut quinn::RecvStream, expected: &[u8]) -> Result<()> {
+    // Read the VarInt length prefix
+    let mut first = [0u8; 1];
+    r.read_exact(&mut first).await?;
+    let len = quicpipe::varint_len(first[0]);
+    let mut varint_buf = vec![0u8; len];
+    varint_buf[0] = first[0];
+    if len > 1 {
+        r.read_exact(&mut varint_buf[1..]).await?;
+    }
+    let handshake_len = quicpipe::decode_varint(&varint_buf) as usize;
+
+    anyhow::ensure!(
+        handshake_len <= quicpipe::MAX_HANDSHAKE_SIZE,
+        "handshake too large: {} bytes (max {})",
+        handshake_len,
+        quicpipe::MAX_HANDSHAKE_SIZE
+    );
+
+    // Read the handshake payload
+    let mut buf = vec![0u8; handshake_len];
+    r.read_exact(&mut buf).await?;
+    anyhow::ensure!(buf == expected, "invalid handshake");
+    Ok(())
+}
+
 /// Handle a single connection from a client.
 async fn handle_connection(
     s: quinn::SendStream,
     mut r: quinn::RecvStream,
     remote_addr: SocketAddr,
     recv_only: bool,
-    is_custom_alpn: bool,
+    no_handshake: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
-    if !is_custom_alpn {
-        // read the handshake and verify it
-        let mut buf = vec![0u8; handshake.len()];
-        if let Err(e) = r.read_exact(&mut buf).await {
-            // Check if this is a graceful close or reset
-            let err: anyhow::Error = e.into();
-            if is_graceful_close(&err) {
-                tracing::debug!("client disconnected during handshake: {}", err);
-                return Ok(()); // Treat as graceful close
-            }
-            return Err(err);
+    if !no_handshake && let Err(e) = read_and_verify_handshake(&mut r, &handshake).await {
+        if is_graceful_close(&e) {
+            tracing::debug!("client disconnected during handshake: {}", e);
+            return Ok(());
         }
-        if buf != handshake {
-            tracing::warn!(
-                "invalid handshake from {}: expected {} bytes, got {:?}",
-                remote_addr,
-                handshake.len(),
-                buf
-            );
-            anyhow::bail!("invalid handshake");
-        }
+        tracing::warn!("handshake failed from {}: {}", remote_addr, e);
+        return Err(e);
     }
 
     let result = if recv_only {
@@ -67,14 +80,11 @@ async fn handle_quic_stream(
     s: quinn::SendStream,
     mut r: quinn::RecvStream,
     addrs: Vec<SocketAddr>,
-    is_custom_alpn: bool,
+    no_handshake: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
-    if !is_custom_alpn {
-        // Read the handshake and verify it
-        let mut buf = vec![0u8; handshake.len()];
-        r.read_exact(&mut buf).await?;
-        anyhow::ensure!(buf == handshake, "invalid handshake");
+    if !no_handshake {
+        read_and_verify_handshake(&mut r, &handshake).await?;
     }
 
     let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
@@ -91,7 +101,7 @@ async fn handle_quic_stream(
 async fn handle_quic_connection(
     connection: quinn::Connection,
     addrs: Vec<SocketAddr>,
-    is_custom_alpn: bool,
+    no_handshake: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
     let remote_addr = connection.remote_address();
@@ -118,7 +128,7 @@ async fn handle_quic_connection(
         let addrs = addrs.clone();
         let handshake = handshake.clone();
         tokio::spawn(async move {
-            if let Err(cause) = handle_quic_stream(s, r, addrs, is_custom_alpn, handshake).await {
+            if let Err(cause) = handle_quic_stream(s, r, addrs, no_handshake, handshake).await {
                 if is_graceful_close(&cause) {
                     tracing::debug!("stream closed: {}", cause);
                 } else {
@@ -182,7 +192,7 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
             r,
             remote_addr,
             args.recv_only,
-            args.common.is_custom_alpn(),
+            args.common.no_handshake,
             args.common.handshake()?,
         )
         .await
@@ -244,12 +254,12 @@ pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
         };
 
         let addrs = addrs.clone();
-        let is_custom_alpn = args.common.is_custom_alpn();
+        let no_handshake = args.common.no_handshake;
         let handshake = args.common.handshake()?;
 
         tokio::spawn(async move {
             if let Err(cause) =
-                handle_quic_connection(connection, addrs, is_custom_alpn, handshake).await
+                handle_quic_connection(connection, addrs, no_handshake, handshake).await
             {
                 // log error at warn level
                 //

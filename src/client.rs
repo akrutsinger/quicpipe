@@ -16,7 +16,7 @@ async fn handle_tcp_connection(
     tcp_stream: tokio::net::TcpStream,
     tcp_addr: SocketAddr,
     connection: quinn::Connection,
-    is_custom_alpn: bool,
+    no_handshake: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
     let (tcp_recv, tcp_send) = tcp_stream.into_split();
@@ -27,8 +27,11 @@ async fn handle_tcp_connection(
         .await
         .map_err(|e| anyhow::anyhow!("error opening bidi stream: {}", e))?;
 
-    // Send the handshake unless we are using a custom ALPN
-    if !is_custom_alpn {
+    // Send the length-prefixed handshake unless we are using a custom ALPN
+    if !no_handshake {
+        quic_send
+            .write_all(&quicpipe::encode_varint(handshake.len() as u64))
+            .await?;
         quic_send.write_all(&handshake).await?;
     }
 
@@ -133,11 +136,11 @@ pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     let (mut s, r) = connection.open_bi().await?;
     tracing::info!("Opened bidi stream to {}", args.server_addr);
 
-    // Send the handshake unless we are using a custom alpn
-    if !args.common.is_custom_alpn() {
-        // The connecting side must write first. We don't know if there will be something
-        // on stdin, so just write a handshake.
+    // Send the length-prefixed handshake unless disabled
+    if !args.common.no_handshake {
         let handshake = args.common.handshake()?;
+        s.write_all(&quicpipe::encode_varint(handshake.len() as u64))
+            .await?;
         s.write_all(&handshake).await?;
     }
 
@@ -231,12 +234,12 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
         };
 
         let connection = connection.clone();
-        let is_custom_alpn = args.common.is_custom_alpn();
+        let no_handshake = args.common.no_handshake;
         let handshake = args.common.handshake()?;
 
         tokio::spawn(async move {
             if let Err(cause) =
-                handle_tcp_connection(tcp_stream, tcp_addr, connection, is_custom_alpn, handshake)
+                handle_tcp_connection(tcp_stream, tcp_addr, connection, no_handshake, handshake)
                     .await
             {
                 tracing::warn!("error handling connection: {}", cause);

@@ -101,6 +101,13 @@ pub struct CommonArgs {
     #[clap(short = 's', long, value_name = "STRING")]
     pub handshake: Option<String>,
 
+    /// Disable the handshake exchange
+    ///
+    /// By default, the connecting side sends a handshake that the listening side verifies.
+    /// Use this flag to skip the handshake entirely.
+    #[clap(long)]
+    pub no_handshake: bool,
+
     /// Connection idle timeout in seconds [default: 300]
     ///
     /// Use 0 for infinite timeout, but know this could completely hang your connections.
@@ -114,10 +121,6 @@ impl CommonArgs {
             Some(alpn) => parse_alpn(alpn)?,
             None => quicpipe::ALPN.to_vec(),
         })
-    }
-
-    pub fn is_custom_alpn(&self) -> bool {
-        self.alpn.is_some()
     }
 
     /// Get the handshake bytes.
