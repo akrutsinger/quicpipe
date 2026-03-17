@@ -325,7 +325,7 @@ cargo test
 
 ## License
 
-free for all
+MIT
 
 ## Contributing
 
