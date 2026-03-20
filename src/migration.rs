@@ -75,10 +75,10 @@ mod tests {
         let v6_ips = get_ips_for_family(v6_target);
 
         for ip in &v4_ips {
-            assert!(ip.is_ipv4(), "expected only v4 addrs, got {}", ip);
+            assert!(ip.is_ipv4(), "expected only v4 addrs, got {ip}");
         }
         for ip in &v6_ips {
-            assert!(ip.is_ipv6(), "expected only v6 addrs, got {}", ip);
+            assert!(ip.is_ipv6(), "expected only v6 addrs, got {ip}");
         }
     }
 
@@ -133,7 +133,7 @@ pub(crate) fn spawn_migration_monitor(
 
             let removed: Vec<_> = last_ips.difference(&current_ips).collect();
             let added: Vec<_> = current_ips.difference(&last_ips).collect();
-            tracing::debug!("IP changes - added: {:?}, removed: {:?}", added, removed);
+            tracing::debug!("IP changes - added: {added:?}, removed: {removed:?}");
 
             if !removed.is_empty() {
                 let old_local = endpoint.local_addr().ok();
@@ -147,9 +147,9 @@ pub(crate) fn spawn_migration_monitor(
                                 endpoint.local_addr().ok()
                             );
                         }
-                        Err(e) => tracing::warn!("Failed to rebind endpoint: {}", e),
+                        Err(e) => tracing::warn!("Failed to rebind endpoint: {e}"),
                     },
-                    Err(e) => tracing::warn!("Failed to bind new socket to {}: {}", new_addr, e),
+                    Err(e) => tracing::warn!("Failed to bind new socket to {new_addr}: {e}"),
                 }
             }
 

@@ -3,7 +3,7 @@
 //! These tests verify end-to-end functionality of the quicpipe binary.
 //!
 //! Instead of hardcoding ports and sleeping, each test uses port 0 (OS-assigned) and reads the
-//! server's stderr for the "Listening on: <addr>" readiness line to extract the actual bound
+//! server's stderr for the "listening on: <addr>" readiness line to extract the actual bound
 //! address. This eliminates both port collisions and timing flakes.
 
 #![cfg_attr(target_os = "windows", allow(unused_imports, dead_code))]
@@ -39,10 +39,11 @@ impl Drop for TestServer {
 /// Spawn a quicpipe server process with the given CLI args.
 ///
 /// Feeds `stdin_data` into the process's stdin (then closes it), and waits for the readiness line
-/// on stderr that contains `ready_prefix` (e.g. `"Listening on: "`). Returns the parsed address
+/// on stderr that contains `ready_prefix` (e.g. `"listening on: "`). Returns the parsed address
 /// and a handle to the running child.
 fn start_server(args: &[&str], stdin_data: &[u8], ready_prefix: &str) -> TestServer {
     let mut child = Command::new(quicpipe_bin())
+        .arg("-v")
         .args(args)
         .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
@@ -74,9 +75,10 @@ fn start_server(args: &[&str], stdin_data: &[u8], ready_prefix: &str) -> TestSer
                 prefix
             );
         }
-        if let Some(rest) = line.trim().strip_prefix(&prefix) {
+        if let Some((_, rest)) = line.split_once(&prefix) {
             // Replace wildcard bind addresses with loopback for connecting.
             addr = rest
+                .trim()
                 .replace("0.0.0.0", "127.0.0.1")
                 .replace("[::]", "[::1]");
             break;
@@ -100,17 +102,24 @@ fn start_server(args: &[&str], stdin_data: &[u8], ready_prefix: &str) -> TestSer
 ///
 /// Adds a short idle timeout so tests don't hang for 5 minutes on edge cases.
 fn start_listen(extra_args: &[&str], stdin_data: &[u8]) -> TestServer {
-    let mut args = vec!["listen", "--idle-timeout-s", "30"];
+    let mut args = vec!["-v", "listen", "--idle-timeout-s", "30"];
     args.extend_from_slice(extra_args);
     // Don't pass -p; the default is port 0 (OS-assigned).
-    start_server(&args, stdin_data, "Listening on: ")
+    start_server(&args, stdin_data, "listening on: ")
 }
 
 /// Convenience: start a `quicpipe listen-tcp` server on an OS-assigned port.
 fn start_listen_tcp(backend: &str, extra_args: &[&str]) -> TestServer {
-    let mut args = vec!["listen-tcp", "--backend", backend, "--idle-timeout-s", "30"];
+    let mut args = vec![
+        "-v",
+        "listen-tcp",
+        "--backend",
+        backend,
+        "--idle-timeout-s",
+        "30",
+    ];
     args.extend_from_slice(extra_args);
-    start_server(&args, &[], "Listening on: ")
+    start_server(&args, &[], "listening on: ")
 }
 
 /// Run a `quicpipe connect` command to completion, returning (stdout, exit status).
@@ -119,6 +128,7 @@ fn run_connect(addr: &str, extra_args: &[&str], stdin_data: &[u8]) -> (Vec<u8>, 
     args.extend_from_slice(extra_args);
 
     let mut child = Command::new(quicpipe_bin())
+        .arg("-v")
         .args(&args)
         .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
@@ -158,6 +168,7 @@ fn run_connect_full(
     args.extend_from_slice(extra_args);
 
     let mut child = Command::new(quicpipe_bin())
+        .arg("-v")
         .args(&args)
         .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
@@ -245,6 +256,7 @@ fn connect_listen_ctrlc_connect() {
     let addr = server.addr.clone();
 
     let mut connect = Command::new(quicpipe_bin())
+        .arg("-v")
         .args(["connect", &addr])
         .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
@@ -279,6 +291,7 @@ fn connect_listen_ctrlc_listen() {
     let addr = server.addr.clone();
 
     let mut connect = Command::new(quicpipe_bin())
+        .arg("-v")
         .args(["connect", &addr])
         .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
@@ -478,7 +491,7 @@ fn test_retry_flag() {
     let server = start_server(
         &["listen", "-p", &port.to_string(), "--once"],
         b"server message",
-        "Listening on: ",
+        "listening on: ",
     );
 
     let (connect_stdout, connect_ok) = connect_handle.join().expect("connect thread panicked");
@@ -495,7 +508,7 @@ fn test_ipv4_binding() {
     let server = start_server(
         &["listen", "--ipv4-addr", "127.0.0.1:0", "--once"],
         b"hello ipv4",
-        "Listening on: ",
+        "listening on: ",
     );
     let addr = server.addr.clone();
 
@@ -512,7 +525,7 @@ fn test_ipv6_binding() {
     let server = start_server(
         &["listen", "--ipv6-addr", "[::1]:0", "--once"],
         b"hello ipv6",
-        "Listening on: ",
+        "listening on: ",
     );
     let addr = server.addr.clone();
 

@@ -46,18 +46,18 @@ async fn handle_connection(
 ) -> Result<()> {
     if !no_handshake && let Err(e) = read_and_verify_handshake(&mut r, &handshake).await {
         if is_graceful_close(&e) {
-            tracing::debug!("client disconnected during handshake: {}", e);
+            tracing::debug!("client disconnected during handshake: {e}");
             return Ok(());
         }
-        tracing::warn!("handshake failed from {}: {}", remote_addr, e);
+        tracing::warn!("handshake failed from {remote_addr}: {e}");
         return Err(e);
     }
 
     let result = if recv_only {
-        tracing::info!("forwarding stdout to {} (ignoring stdin)", remote_addr);
+        tracing::info!("forwarding stdout to {remote_addr} (ignoring stdin)");
         forward_bidi(tokio::io::empty(), tokio::io::stdout(), r, s).await
     } else {
-        tracing::info!("forwarding stdin/stdout to {}", remote_addr);
+        tracing::info!("forwarding stdin/stdout to {remote_addr}");
         forward_bidi(tokio::io::stdin(), tokio::io::stdout(), r, s).await
     };
 
@@ -66,7 +66,7 @@ async fn handle_connection(
         Ok(_) => Ok(()),
         Err(e) => {
             if is_graceful_close(&e) {
-                tracing::debug!("connection closed: {}", e);
+                tracing::debug!("connection closed: {e}");
                 Ok(()) // Treat as graceful close
             } else {
                 Err(e)
@@ -79,18 +79,25 @@ async fn handle_connection(
 async fn handle_quic_stream(
     s: quinn::SendStream,
     mut r: quinn::RecvStream,
+    remote_addr: SocketAddr,
     addrs: Vec<SocketAddr>,
     no_handshake: bool,
     handshake: Vec<u8>,
 ) -> Result<()> {
-    if !no_handshake {
-        read_and_verify_handshake(&mut r, &handshake).await?;
+    if !no_handshake && let Err(e) = read_and_verify_handshake(&mut r, &handshake).await {
+        if is_graceful_close(&e) {
+            tracing::debug!("client {remote_addr} disconnected during handshake: {e}");
+            return Ok(());
+        }
+        tracing::warn!("handshake failed from {remote_addr}: {e}");
+        return Err(e);
     }
 
     let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
         .await
         .map_err(|e| anyhow::anyhow!("error connecting to {addrs:?}: {e}"))?;
-    tracing::info!("connected to TCP {:?}", addrs);
+    let peer = tcp_stream.peer_addr()?;
+    tracing::info!("connected to TCP backend {peer}");
 
     let (read, write) = tcp_stream.into_split();
     forward_bidi(read, write, r, s).await?;
@@ -105,7 +112,7 @@ async fn handle_quic_connection(
     handshake: Vec<u8>,
 ) -> Result<()> {
     let remote_addr = connection.remote_address();
-    tracing::info!("got connection from {}", remote_addr);
+    tracing::info!("got connection from {remote_addr}");
 
     loop {
         let (s, r) = match connection.accept_bi().await {
@@ -115,24 +122,26 @@ async fn handle_quic_connection(
                 | quinn::ConnectionError::ConnectionClosed(_)
                 | quinn::ConnectionError::LocallyClosed,
             ) => {
-                tracing::debug!("connection from {} closed", remote_addr);
+                tracing::debug!("connection from {remote_addr} closed");
                 break;
             }
             Err(e) => {
-                tracing::warn!("error accepting stream from {}: {}", remote_addr, e);
+                tracing::warn!("error accepting stream from {remote_addr}: {e}");
                 break;
             }
         };
-        tracing::info!("accepted bidi stream from {}", remote_addr);
+        tracing::debug!("accepted bidi stream from {remote_addr}");
 
         let addrs = addrs.clone();
         let handshake = handshake.clone();
         tokio::spawn(async move {
-            if let Err(cause) = handle_quic_stream(s, r, addrs, no_handshake, handshake).await {
+            if let Err(cause) =
+                handle_quic_stream(s, r, remote_addr, addrs, no_handshake, handshake).await
+            {
                 if is_graceful_close(&cause) {
-                    tracing::debug!("stream closed: {}", cause);
+                    tracing::debug!("stream closed: {cause}");
                 } else {
-                    tracing::warn!("error handling stream: {}", cause);
+                    tracing::warn!("error handling stream: {cause}");
                 }
             }
         });
@@ -146,11 +155,8 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
-    // print the local address on stderr so it doesn't interfere with the data itself
-    eprintln!("Listening on: {local_addr}");
-    if args.common.verbose > 0 {
-        eprintln!("To connect, use:\nquicpipe connect {local_addr}");
-    }
+    tracing::info!("listening on: {local_addr}");
+    tracing::debug!("to connect, use: quicpipe connect {local_addr}");
 
     loop {
         // Accept connections with Ctrl-C handling
@@ -162,29 +168,29 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                eprintln!("\nShutting down gracefully...");
+                tracing::info!("shutting down gracefully...");
                 break;
             }
         };
         let connection = match connecting.await {
             Ok(connection) => connection,
             Err(cause) => {
-                tracing::warn!("error accepting connection: {}", cause);
+                tracing::warn!("error accepting connection: {cause}");
                 // if accept fails, we want to continue accepting connections
                 continue;
             }
         };
         let remote_addr = connection.remote_address();
-        tracing::info!("got connection from {}", remote_addr);
+        tracing::info!("got connection from {remote_addr}");
         let (s, r) = match connection.accept_bi().await {
             Ok(x) => x,
             Err(cause) => {
-                tracing::warn!("error accepting stream: {}", cause);
+                tracing::warn!("error accepting stream: {cause}");
                 // if accept_bi fails, we want to continue accepting connections
                 continue;
             }
         };
-        tracing::info!("accepted bidi stream from {}", remote_addr);
+        tracing::debug!("accepted bidi stream from {remote_addr}");
 
         // Handle connection in the main task (stdin/stdout can't be shared across tasks)
         match handle_connection(
@@ -198,19 +204,15 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
         .await
         {
             Ok(_) => {
-                tracing::info!("connection from {} closed gracefully", remote_addr);
+                tracing::info!("connection from {remote_addr} closed gracefully");
             }
             Err(e) => {
-                tracing::error!("error handling connection from {}: {}", remote_addr, e);
+                tracing::error!("error handling connection from {remote_addr}: {e}");
             }
         }
 
         if args.once {
             break;
-        }
-
-        if args.common.verbose > 0 {
-            eprintln!("Ready for next connection...");
         }
     }
     Ok(())
@@ -220,16 +222,14 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
 pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
     let addrs = match args.backend.to_socket_addrs() {
         Ok(addrs) => addrs.collect::<Vec<_>>(),
-        Err(e) => anyhow::bail!("invalid host string {}: {}", args.backend, e),
+        Err(e) => anyhow::bail!("invalid host string {}: {e}", args.backend),
     };
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
-    // Print the local address on stderr so it doesn't interfere with the data itself
-    eprintln!("Listening on: {local_addr}");
-    eprintln!("Forwarding incoming requests to '{}'.", args.backend);
-    eprintln!("To connect, use:");
-    eprintln!("quicpipe connect {local_addr}");
+    tracing::info!("listening on: {local_addr}");
+    tracing::info!("forwarding incoming requests to '{}'.", args.backend);
+    tracing::debug!("to connect, use: quicpipe connect {local_addr}");
 
     loop {
         let connecting = tokio::select! {
@@ -240,7 +240,7 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                eprintln!("\nShutting down gracefully...");
+                tracing::info!("shutting down gracefully...");
                 break;
             }
         };
@@ -248,7 +248,7 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
         let connection = match connecting.await {
             Ok(connection) => connection,
             Err(cause) => {
-                tracing::warn!("error accepting connection: {}", cause);
+                tracing::warn!("error accepting connection: {cause}");
                 continue;
             }
         };
@@ -261,10 +261,7 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
             if let Err(cause) =
                 handle_quic_connection(connection, addrs, no_handshake, handshake).await
             {
-                // log error at warn level
-                //
-                // we should know about it, but it's not fatal
-                tracing::warn!("error handling connection: {}", cause);
+                tracing::warn!("error handling connection: {cause}");
             }
         });
     }

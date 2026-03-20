@@ -17,6 +17,10 @@ use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 pub(crate) struct Args {
     #[clap(subcommand)]
     pub command: Commands,
+
+    /// Increase output verbosity (can be repeated: -v, -vv, -vvv)
+    #[clap(short = 'v', long, global = true, action = clap::ArgAction::Count)]
+    pub verbose: u8,
 }
 
 #[derive(Subcommand, Debug)]
@@ -85,10 +89,6 @@ pub(crate) struct CommonArgs {
     /// Example: --alpn utf8:myproto or --alpn 6833 (hex for 'h3')
     #[clap(long, value_name = "ALPN")]
     pub alpn: Option<String>,
-
-    /// Increase output verbosity (can be repeated: -v, -vv, -vvv)
-    #[clap(short = 'v', long, action = clap::ArgAction::Count)]
-    pub verbose: u8,
 
     /// Custom handshake string for authentication [default: ahoy]
     ///

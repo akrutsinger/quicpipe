@@ -106,7 +106,10 @@ pub(crate) async fn forward_bidi(
 
     // Check if either failed with a non-cancellation error
     match (stdout_result, stdin_result) {
-        (Ok(_), Ok(_)) => Ok(()),
+        (Ok(down), Ok(up)) => {
+            tracing::debug!("forwarded {up} bytes up, {down} bytes down");
+            Ok(())
+        }
         (Err(e), _) | (_, Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
             // Cancellation is expected and not an error
             Ok(())

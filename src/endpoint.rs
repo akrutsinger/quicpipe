@@ -138,5 +138,7 @@ pub(crate) async fn create_endpoint(
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;
     endpoint.set_default_client_config(client_config);
 
+    tracing::debug!("endpoint bound to {}", endpoint.local_addr()?);
+
     Ok(endpoint)
 }
