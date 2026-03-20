@@ -14,13 +14,13 @@ use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 /// --handshake values on both sides.
 #[derive(Parser, Debug)]
 #[clap(name = "quicpipe", version)]
-pub struct Args {
+pub(crate) struct Args {
     #[clap(subcommand)]
     pub command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Commands {
+pub(crate) enum Commands {
     /// Listen for incoming QUIC connections and forward data to stdin/stdout
     ///
     /// Starts a QUIC server that accepts connections and forwards data bidirectionally between the
@@ -52,7 +52,7 @@ pub enum Commands {
 }
 
 #[derive(Parser, Debug)]
-pub struct CommonArgs {
+pub(crate) struct CommonArgs {
     /// Port for the QUIC endpoint to bind to
     ///
     /// If not specified, a random available port is used. This is a simpler alternative to
@@ -70,7 +70,7 @@ pub struct CommonArgs {
 
     /// Bind to a specific IPv6 address and port
     ///
-    /// Format: [IP]:PORT (e.g., [::]:5000 or [::1]:5000).
+    /// Format: `[IP]:PORT` (e.g., `[::]:5000` or `[::1]:5000`).
     /// Takes precedence over --port. Useful for IPv6-only environments or binding to a specific
     /// network interface.
     #[clap(long, value_name = "[ADDR]:PORT")]
@@ -116,7 +116,7 @@ pub struct CommonArgs {
 }
 
 impl CommonArgs {
-    pub fn alpn(&self) -> Result<Vec<u8>> {
+    pub(crate) fn alpn(&self) -> Result<Vec<u8>> {
         Ok(match &self.alpn {
             Some(alpn) => parse_alpn(alpn)?,
             None => quicpipe::ALPN.to_vec(),
@@ -124,7 +124,7 @@ impl CommonArgs {
     }
 
     /// Get the handshake bytes.
-    pub fn handshake(&self) -> Result<Vec<u8>> {
+    pub(crate) fn handshake(&self) -> Result<Vec<u8>> {
         Ok(match &self.handshake {
             Some(hs) => parse_handshake(hs)?,
             None => quicpipe::HANDSHAKE.to_vec(),
@@ -132,7 +132,7 @@ impl CommonArgs {
     }
 
     /// Get the bind address for the endpoint (for servers).
-    pub fn bind_addr(&self) -> SocketAddr {
+    pub(crate) fn bind_addr(&self) -> SocketAddr {
         if let Some(addr) = self.ipv4_addr {
             SocketAddr::V4(addr)
         } else if let Some(addr) = self.ipv6_addr {
@@ -150,7 +150,7 @@ impl CommonArgs {
     ///
     /// This ensures we bind to an IPv4 address when connecting to IPv4, and IPv6 when connecting to
     /// IPv6.
-    pub fn bind_addr_for_target(&self, target: SocketAddr) -> SocketAddr {
+    pub(crate) fn bind_addr_for_target(&self, target: SocketAddr) -> SocketAddr {
         // If explicit addresses are specified, use them
         if let Some(addr) = self.ipv4_addr {
             return SocketAddr::V4(addr);
@@ -203,7 +203,7 @@ fn parse_handshake(handshake: &str) -> Result<Vec<u8>> {
 }
 
 #[derive(Parser, Debug)]
-pub struct ListenArgs {
+pub(crate) struct ListenArgs {
     /// Only receive data, don't send (close outgoing stream immediately)
     #[clap(long)]
     pub recv_only: bool,
@@ -221,7 +221,7 @@ pub struct ListenArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct ListenTcpArgs {
+pub(crate) struct ListenTcpArgs {
     /// TCP backend address to forward connections to
     ///
     /// Format: HOST:PORT (e.g., localhost:22 or 192.168.1.1:8080).
@@ -234,7 +234,7 @@ pub struct ListenTcpArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct ConnectTcpArgs {
+pub(crate) struct ConnectTcpArgs {
     /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
     #[clap(value_name = "SERVER")]
     pub server_addr: SocketAddr,
@@ -249,7 +249,7 @@ pub struct ConnectTcpArgs {
     /// Disable connection migration on network changes
     ///
     /// By default, the connection monitors network interfaces and automatically migrates when the
-    /// local IP address changes (e.g., switching from WiFi to cellular, or IP address renewal).
+    /// local IP address changes (e.g., switching from Wi-Fi to cellular, or IP address renewal).
     /// Use this flag to disable migration.
     #[clap(long = "no-migrate", action = clap::ArgAction::SetFalse, default_value = "true")]
     pub migrate: bool,
@@ -259,7 +259,7 @@ pub struct ConnectTcpArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct ConnectArgs {
+pub(crate) struct ConnectArgs {
     /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
     #[clap(value_name = "SERVER")]
     pub server_addr: SocketAddr,
@@ -286,7 +286,7 @@ pub struct ConnectArgs {
     /// Disable connection migration on network changes
     ///
     /// By default, the connection monitors network interfaces and automatically migrates when the
-    /// local IP address changes (e.g., switching from WiFi to cellular, or IP address renewal).
+    /// local IP address changes (e.g., switching from Wi-Fi to cellular, or IP address renewal).
     /// Use this flag to disable migration.
     #[clap(long = "no-migrate", action = clap::ArgAction::SetFalse, default_value = "true")]
     pub migrate: bool,

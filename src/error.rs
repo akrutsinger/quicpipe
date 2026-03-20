@@ -3,7 +3,7 @@
 use std::io;
 
 /// Check if an IO error represents a graceful connection close.
-pub fn is_io_close_error(err: &io::Error) -> bool {
+pub(crate) fn is_io_close_error(err: &io::Error) -> bool {
     matches!(
         err.kind(),
         io::ErrorKind::ConnectionReset
@@ -13,13 +13,13 @@ pub fn is_io_close_error(err: &io::Error) -> bool {
     )
 }
 
-/// Check if an anyhow::Error represents a graceful connection close or reset.
+/// Check if an `anyhow::Error` represents a graceful connection close or reset.
 ///
 /// This checks for:
-/// - Standard IO errors (ConnectionReset, BrokenPipe, etc.)
-/// - Quinn connection errors (ConnectionClosed, Reset, etc.)
-/// - Quinn read errors (ConnectionLost, Reset)
-pub fn is_graceful_close(err: &anyhow::Error) -> bool {
+/// - Standard IO errors (`ConnectionReset`, `BrokenPipe`, etc.)
+/// - Quinn connection errors (`ConnectionClosed`, `Reset`, etc.)
+/// - Quinn read errors (`ConnectionLost`, `Reset`)
+pub(crate) fn is_graceful_close(err: &anyhow::Error) -> bool {
     // Check for io::Error
     if let Some(io_err) = err.downcast_ref::<io::Error>() {
         return is_io_close_error(io_err);

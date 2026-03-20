@@ -21,9 +21,9 @@ impl SkipServerVerification {
 impl ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &CertificateDer,
-        _intermediates: &[CertificateDer],
-        _server_name: &ServerName,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
@@ -33,7 +33,7 @@ impl ServerCertVerifier for SkipServerVerification {
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &CertificateDer,
+        _cert: &CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
@@ -42,7 +42,7 @@ impl ServerCertVerifier for SkipServerVerification {
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
-        _cert: &CertificateDer,
+        _cert: &CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
@@ -58,11 +58,14 @@ impl ServerCertVerifier for SkipServerVerification {
 }
 
 /// Creates a QUIC server config with a self-signed certificate.
-pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quinn::ServerConfig> {
+pub(crate) fn configure_server(
+    alpns: Vec<Vec<u8>>,
+    idle_timeout_s: u64,
+) -> Result<quinn::ServerConfig> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
     let cert_der = cert.cert.der().to_vec();
     let priv_key = PrivateKeyDer::try_from(cert.signing_key.serialize_der())
-        .map_err(|e| anyhow::anyhow!("Failed to serialize private key: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to serialize private key: {e}"))?;
     let cert_chain = vec![CertificateDer::from(cert_der)];
 
     let mut server_crypto = rustls::ServerConfig::builder()
@@ -89,7 +92,10 @@ pub fn configure_server(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
 }
 
 /// Creates a QUIC client config that skips certificate verification.
-pub fn configure_client(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quinn::ClientConfig> {
+pub(crate) fn configure_client(
+    alpns: Vec<Vec<u8>>,
+    idle_timeout_s: u64,
+) -> Result<quinn::ClientConfig> {
     let mut crypto = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(SkipServerVerification::new())
@@ -115,7 +121,7 @@ pub fn configure_client(alpns: Vec<Vec<u8>>, idle_timeout_s: u64) -> Result<quin
 
 /// Creates a QUIC endpoint with server and client capabilities. If `target` is provided, match the
 /// target's IP version for binding.
-pub async fn create_endpoint(
+pub(crate) async fn create_endpoint(
     common: &CommonArgs,
     alpns: Vec<Vec<u8>>,
     target: Option<std::net::SocketAddr>,

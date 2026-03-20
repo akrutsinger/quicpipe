@@ -11,7 +11,7 @@ use crate::error::is_io_close_error;
 /// Will gracefully finish the stream when done, or send reset if cancelled.
 ///
 /// Returns the number of bytes copied in case of success.
-pub async fn copy_to_quinn(
+pub(crate) async fn copy_to_quinn(
     mut from: impl AsyncRead + Unpin,
     mut send: quinn::SendStream,
     token: CancellationToken,
@@ -37,7 +37,7 @@ pub async fn copy_to_quinn(
 /// Will gracefully handle stream completion or cancellation.
 ///
 /// Returns the number of bytes copied in case of success.
-pub async fn copy_from_quinn(
+pub(crate) async fn copy_from_quinn(
     mut recv: quinn::RecvStream,
     mut to: impl AsyncWrite + Unpin,
     token: CancellationToken,
@@ -65,7 +65,7 @@ pub async fn copy_from_quinn(
     }
 }
 
-pub fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
+pub(crate) fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
     move |x| {
         token.cancel();
         x
@@ -74,7 +74,7 @@ pub fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
 
 /// Bidirectionally forward data from a quinn stream and an arbitrary tokio reader/writer pair,
 /// aborting both sides when either one forwarder is done, or when control-c is pressed.
-pub async fn forward_bidi(
+pub(crate) async fn forward_bidi(
     from1: impl AsyncRead + Send + Sync + Unpin + 'static,
     to1: impl AsyncWrite + Send + Sync + Unpin + 'static,
     from2: quinn::RecvStream,

@@ -6,8 +6,11 @@ pub const ALPN: &[u8] = b"h3";
 
 /// The handshake to send when connecting.
 ///
-/// The side that calls open_bi() first must send this handshake, the side that calls accept_bi()
-/// must consume it.
+/// The side that calls [`open_bi()`] first must send this handshake, the side that calls
+/// [`accept_bi()`] must consume it.
+///
+/// [`open_bi()`]: quinn::Connection::open_bi
+/// [`accept_bi()`]: quinn::Connection::accept_bi
 pub const HANDSHAKE: [u8; 4] = *b"ahoy";
 
 /// Maximum allowed handshake size (64 KB)
@@ -16,7 +19,7 @@ pub const MAX_HANDSHAKE_SIZE: usize = 65536;
 /// Maximum ALPN protocol length per RFC 7301
 pub const MAX_ALPN_LENGTH: usize = 255;
 
-/// Encode a value as a QUIC VarInt (RFC 9000, Section 16).
+/// Encode a value as a QUIC `VarInt` (RFC 9000, Section 16).
 ///
 /// Returns 1, 2, 4, or 8 bytes depending on the value.
 pub fn encode_varint(value: u64) -> Vec<u8> {
@@ -31,12 +34,12 @@ pub fn encode_varint(value: u64) -> Vec<u8> {
     }
 }
 
-/// Determine the total byte length of a VarInt from its first byte.
+/// Determine the total byte length of a `VarInt` from its first byte.
 pub fn varint_len(first_byte: u8) -> usize {
     1 << (first_byte >> 6)
 }
 
-/// Decode a QUIC VarInt from a byte slice.
+/// Decode a QUIC `VarInt` from a byte slice.
 ///
 /// The slice must be exactly the length returned by `varint_len(buf[0])`.
 pub fn decode_varint(buf: &[u8]) -> u64 {
@@ -64,7 +67,11 @@ mod tests {
     fn roundtrip(value: u64) {
         let encoded = encode_varint(value);
         let len = varint_len(encoded[0]);
-        assert_eq!(encoded.len(), len, "varint_len disagrees with encode for {value}");
+        assert_eq!(
+            encoded.len(),
+            len,
+            "varint_len disagrees with encode for {value}"
+        );
         let decoded = decode_varint(&encoded);
         assert_eq!(decoded, value, "round-trip failed for {value}");
     }
@@ -78,19 +85,19 @@ mod tests {
 
     #[test]
     fn varint_2byte_boundaries() {
-        roundtrip(64);   // min 2-byte
+        roundtrip(64); // min 2-byte
         roundtrip(16383); // max 2-byte
     }
 
     #[test]
     fn varint_4byte_boundaries() {
-        roundtrip(16384);          // min 4-byte
-        roundtrip(1_073_741_823);  // max 4-byte
+        roundtrip(16384); // min 4-byte
+        roundtrip(1_073_741_823); // max 4-byte
     }
 
     #[test]
     fn varint_8byte_boundaries() {
-        roundtrip(1_073_741_824);           // min 8-byte
+        roundtrip(1_073_741_824); // min 8-byte
         roundtrip(4_611_686_018_427_387_903); // max 62-bit
     }
 

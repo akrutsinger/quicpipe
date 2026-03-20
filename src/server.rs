@@ -89,7 +89,7 @@ async fn handle_quic_stream(
 
     let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
         .await
-        .map_err(|e| anyhow::anyhow!("error connecting to {:?}: {}", addrs, e))?;
+        .map_err(|e| anyhow::anyhow!("error connecting to {addrs:?}: {e}"))?;
     tracing::info!("connected to TCP {:?}", addrs);
 
     let (read, write) = tcp_stream.into_split();
@@ -142,14 +142,14 @@ async fn handle_quic_connection(
 }
 
 /// Listen on an endpoint and forward incoming connections to stdio.
-pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
+pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
     // print the local address on stderr so it doesn't interfere with the data itself
-    eprintln!("Listening on: {}", local_addr);
+    eprintln!("Listening on: {local_addr}");
     if args.common.verbose > 0 {
-        eprintln!("To connect, use:\nquicpipe connect {}", local_addr);
+        eprintln!("To connect, use:\nquicpipe connect {local_addr}");
     }
 
     loop {
@@ -217,7 +217,7 @@ pub async fn listen_stdio(args: ListenArgs) -> Result<()> {
 }
 
 /// Listen on an endpoint and forward incoming connections to a TCP socket.
-pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
+pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
     let addrs = match args.backend.to_socket_addrs() {
         Ok(addrs) => addrs.collect::<Vec<_>>(),
         Err(e) => anyhow::bail!("invalid host string {}: {}", args.backend, e),
@@ -226,10 +226,10 @@ pub async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()> {
     let local_addr = endpoint.local_addr()?;
 
     // Print the local address on stderr so it doesn't interfere with the data itself
-    eprintln!("Listening on: {}", local_addr);
+    eprintln!("Listening on: {local_addr}");
     eprintln!("Forwarding incoming requests to '{}'.", args.backend);
     eprintln!("To connect, use:");
-    eprintln!("quicpipe connect {}", local_addr);
+    eprintln!("quicpipe connect {local_addr}");
 
     loop {
         let connecting = tokio::select! {

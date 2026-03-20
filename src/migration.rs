@@ -12,7 +12,7 @@ use quinn::Endpoint;
 use tokio::sync::watch;
 
 /// Default polling interval for interface changes.
-pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Get current IP addresses matching the given address family.
 fn get_ips_for_family(target: SocketAddr) -> HashSet<IpAddr> {
@@ -102,7 +102,7 @@ mod tests {
 /// * `endpoint` - The QUIC endpoint to rebind on network changes
 /// * `target` - The remote server address (used to match IP version)
 /// * `poll_interval` - How often to check for interface changes
-pub fn spawn_migration_monitor(
+pub(crate) fn spawn_migration_monitor(
     endpoint: Endpoint,
     target: SocketAddr,
     poll_interval: Duration,

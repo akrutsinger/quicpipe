@@ -25,7 +25,7 @@ async fn handle_tcp_connection(
     let (mut quic_send, quic_recv) = connection
         .open_bi()
         .await
-        .map_err(|e| anyhow::anyhow!("error opening bidi stream: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("error opening bidi stream: {e}"))?;
 
     // Send the length-prefixed handshake unless we are using a custom ALPN
     if !no_handshake {
@@ -72,17 +72,17 @@ async fn connect_with_retry(
         match endpoint.connect(args.server_addr, "localhost") {
             Ok(connecting) => match connecting.await {
                 Ok(connection) => {
-                    eprintln!("✅ Connected successfully after {} attempt(s)!", attempt);
+                    eprintln!("✅ Connected successfully after {attempt} attempt(s)!");
                     return Ok(connection);
                 }
                 Err(e) => {
                     tracing::debug!("Connection failed: {}", e);
-                    eprintln!("❌ Attempt {} failed: {}", attempt, e);
+                    eprintln!("❌ Attempt {attempt} failed: {e}");
                 }
             },
             Err(e) => {
                 tracing::debug!("Connect setup failed: {}", e);
-                eprintln!("❌ Attempt {} failed: {}", attempt, e);
+                eprintln!("❌ Attempt {attempt} failed: {e}");
             }
         }
 
@@ -102,7 +102,7 @@ async fn connect_with_retry(
 }
 
 /// Connects to a QUIC server and forwards stdin/stdout over a bidirectional stream.
-pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
+pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     let endpoint = create_endpoint(
         &args.common,
         vec![args.common.alpn()?],
@@ -172,7 +172,7 @@ pub async fn connect_stdio(args: ConnectArgs) -> Result<()> {
 }
 
 /// Listens on a TCP port and forwards incoming connections to a QUIC endpoint.
-pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
+pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
     let addrs = args
         .listen
         .to_socket_addrs()
@@ -200,7 +200,7 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
 
     let tcp_listener = tokio::net::TcpListener::bind(addrs.as_slice())
         .await
-        .map_err(|e| anyhow::anyhow!("error binding tcp socket to {:?}: {}", addrs, e))?;
+        .map_err(|e| anyhow::anyhow!("error binding tcp socket to {addrs:?}: {e}"))?;
 
     // Establish a single QUIC connection upfront and multiplex streams over it
     let connection = endpoint
@@ -210,7 +210,7 @@ pub async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<()> {
     tracing::info!("Connected to {}", args.server_addr);
 
     let local_addr = tcp_listener.local_addr()?;
-    eprintln!("TCP listening on: {}", local_addr);
+    eprintln!("TCP listening on: {local_addr}");
     eprintln!(
         "Forwarding incoming TCP connections to QUIC endpoint: {}",
         args.server_addr
