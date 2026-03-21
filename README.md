@@ -54,7 +54,7 @@ quicpipe listen [OPTIONS]
 | `--once` | Exit after the first client disconnects |
 | `-s, --handshake <STRING>` | Custom handshake for authentication (default: `ahoy`). Prefix with `hex:` for binary data |
 | `--recv-only` | Only receive data, don't send (close outgoing stream immediately) |
-| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 for infinite (default: 300) |
+| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 to wait forever (default: 300) |
 | `-v, --verbose` | Increase output verbosity (repeat for more: `-v`, `-vv`, `-vvv`) |
 | `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address (e.g., `0.0.0.0:5000`). Takes precedence over `--port` |
 | `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address (e.g., `[::]:5000`). Takes precedence over `--port` |
@@ -107,7 +107,7 @@ quicpipe connect [OPTIONS] <SERVER>
 | `--no-migrate` | Disable automatic connection migration on network changes |
 | `--no-handshake` | Disable the handshake exchange |
 | `--alpn <ALPN>` | Custom ALPN protocol identifier (default: `h3`) |
-| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 for infinite (default: 300) |
+| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 to wait forever (default: 300) |
 | `-v, --verbose` | Increase output verbosity |
 
 **Examples:**
@@ -143,7 +143,7 @@ quicpipe listen-tcp [OPTIONS] -b <HOST:PORT>
 | `-b, --backend <HOST:PORT>` | TCP backend address to forward connections to (e.g., `localhost:22`) |
 | `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
 | `-s, --handshake <STRING>` | Custom handshake for authentication |
-| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 for infinite (default: 300) |
+| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 to wait forever (default: 300) |
 | `-v, --verbose` | Increase output verbosity |
 | `--ipv4-addr <ADDR:PORT>` | Bind to specific IPv4 address |
 | `--ipv6-addr <[ADDR]:PORT>` | Bind to specific IPv6 address |
@@ -178,7 +178,10 @@ quicpipe connect-tcp [OPTIONS] <SERVER> -l <ADDR:PORT>
 | `-l, --listen <ADDR:PORT>` | Local TCP address to listen on (e.g., `127.0.0.1:2222` or `0.0.0.0:8080`) |
 | `-p, --port <PORT>` | Port for the QUIC endpoint to bind to (default: random) |
 | `-s, --handshake <STRING>` | Custom handshake for authentication |
-| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 for infinite (default: 300) |
+| `--retry` | Keep retrying until the server becomes available |
+| `--retry-interval <SECS>` | Seconds between connection retry attempts (default: 2) |
+| `--max-retries <COUNT>` | Maximum retry attempts, 0 for unlimited (default: 0) |
+| `--idle-timeout <SECS>` | Connection idle timeout in seconds, 0 to wait forever (default: 300) |
 | `-v, --verbose` | Increase output verbosity |
 | `--ipv4-addr <ADDR:PORT>` | Bind QUIC to specific IPv4 address |
 | `--ipv6-addr <[ADDR]:PORT>` | Bind QUIC to specific IPv6 address |
@@ -307,8 +310,6 @@ quicpipe listen -p 5000
 - **Encryption**: TLS 1.3 via rustls
 - **Default ALPN**: `h3`
 - **Default Handshake**: `ahoy`
-- **Idle Timeout**: 5 minutes
-- **Stream Type**: Bidirectional
 
 ## Building
 

@@ -110,9 +110,10 @@ pub(crate) struct CommonArgs {
 
     /// Connection idle timeout in seconds [default: 300]
     ///
-    /// Use 0 for infinite timeout, but know this could completely hang your connections.
+    /// Use 0 to wait forever — but be aware that if the peer disappears without closing the
+    /// connection, this side will hang indefinitely.
     #[clap(long, default_value = "300", value_name = "SECS")]
-    pub idle_timeout: u64,
+    pub idle_timeout: IdleTimeout,
 }
 
 impl CommonArgs {
@@ -165,6 +166,21 @@ impl CommonArgs {
             SocketAddr::V4(_) => SocketAddr::from(([0, 0, 0, 0], port)),
             SocketAddr::V6(_) => SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 0], port)),
         }
+    }
+}
+
+/// Idle timeout: `Some(secs)` for a positive timeout, `None` for no timeout (when `0` is passed).
+#[derive(Clone, Debug)]
+pub(crate) struct IdleTimeout(pub Option<u64>);
+
+impl std::str::FromStr for IdleTimeout {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let secs: u64 = s
+            .parse()
+            .map_err(|_| format!("expected a non-negative integer, got '{s}'"))?;
+        Ok(Self(if secs == 0 { None } else { Some(secs) }))
     }
 }
 

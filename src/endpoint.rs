@@ -60,7 +60,7 @@ impl ServerCertVerifier for SkipServerVerification {
 /// Creates a QUIC server config with a self-signed certificate.
 pub(crate) fn configure_server(
     alpns: Vec<Vec<u8>>,
-    idle_timeout_s: u64,
+    idle_timeout_s: Option<u64>,
 ) -> Result<quinn::ServerConfig> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
     let cert_der = cert.cert.der().to_vec();
@@ -81,11 +81,9 @@ pub(crate) fn configure_server(
         .expect("server config just created, no other references exist");
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
-    let idle_timeout = if idle_timeout_s == 0 {
-        None
-    } else {
-        Some(std::time::Duration::from_secs(idle_timeout_s).try_into()?)
-    };
+    let idle_timeout = idle_timeout_s
+        .map(|s| std::time::Duration::from_secs(s).try_into())
+        .transpose()?;
     transport_config.max_idle_timeout(idle_timeout);
 
     Ok(server_config)
@@ -94,7 +92,7 @@ pub(crate) fn configure_server(
 /// Creates a QUIC client config that skips certificate verification.
 pub(crate) fn configure_client(
     alpns: Vec<Vec<u8>>,
-    idle_timeout_s: u64,
+    idle_timeout_s: Option<u64>,
 ) -> Result<quinn::ClientConfig> {
     let mut crypto = rustls::ClientConfig::builder()
         .dangerous()
@@ -104,11 +102,9 @@ pub(crate) fn configure_client(
     crypto.alpn_protocols = alpns;
 
     let mut transport_config = quinn::TransportConfig::default();
-    let idle_timeout = if idle_timeout_s == 0 {
-        None
-    } else {
-        Some(std::time::Duration::from_secs(idle_timeout_s).try_into()?)
-    };
+    let idle_timeout = idle_timeout_s
+        .map(|s| std::time::Duration::from_secs(s).try_into())
+        .transpose()?;
     transport_config.max_idle_timeout(idle_timeout);
 
     let mut client_config = quinn::ClientConfig::new(std::sync::Arc::new(
@@ -131,8 +127,8 @@ pub(crate) async fn create_endpoint(
         None => common.bind_addr(),
     };
 
-    let server_config = configure_server(alpns.clone(), common.idle_timeout)?;
-    let client_config = configure_client(alpns, common.idle_timeout)?;
+    let server_config = configure_server(alpns.clone(), common.idle_timeout.0)?;
+    let client_config = configure_client(alpns, common.idle_timeout.0)?;
 
     // Create and bind the endpoint with both server and client capabilities
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;
