@@ -112,7 +112,7 @@ pub(crate) struct CommonArgs {
     ///
     /// Use 0 for infinite timeout, but know this could completely hang your connections.
     #[clap(long, default_value = "300", value_name = "SECS")]
-    pub idle_timeout_s: u64,
+    pub idle_timeout: u64,
 }
 
 impl CommonArgs {

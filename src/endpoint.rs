@@ -131,8 +131,8 @@ pub(crate) async fn create_endpoint(
         None => common.bind_addr(),
     };
 
-    let server_config = configure_server(alpns.clone(), common.idle_timeout_s)?;
-    let client_config = configure_client(alpns, common.idle_timeout_s)?;
+    let server_config = configure_server(alpns.clone(), common.idle_timeout)?;
+    let client_config = configure_client(alpns, common.idle_timeout)?;
 
     // Create and bind the endpoint with both server and client capabilities
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;

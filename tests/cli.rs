@@ -102,7 +102,7 @@ fn start_server(args: &[&str], stdin_data: &[u8], ready_prefix: &str) -> TestSer
 ///
 /// Adds a short idle timeout so tests don't hang for 5 minutes on edge cases.
 fn start_listen(extra_args: &[&str], stdin_data: &[u8]) -> TestServer {
-    let mut args = vec!["-v", "listen", "--idle-timeout-s", "30"];
+    let mut args = vec!["-v", "listen", "--idle-timeout", "30"];
     args.extend_from_slice(extra_args);
     // Don't pass -p; the default is port 0 (OS-assigned).
     start_server(&args, stdin_data, "listening on: ")
@@ -115,7 +115,7 @@ fn start_listen_tcp(backend: &str, extra_args: &[&str]) -> TestServer {
         "listen-tcp",
         "--backend",
         backend,
-        "--idle-timeout-s",
+        "--idle-timeout",
         "30",
     ];
     args.extend_from_slice(extra_args);
@@ -124,7 +124,7 @@ fn start_listen_tcp(backend: &str, extra_args: &[&str]) -> TestServer {
 
 /// Run a `quicpipe connect` command to completion, returning (stdout, exit status).
 fn run_connect(addr: &str, extra_args: &[&str], stdin_data: &[u8]) -> (Vec<u8>, bool) {
-    let mut args = vec!["connect", addr, "--idle-timeout-s", "30"];
+    let mut args = vec!["connect", addr, "--idle-timeout", "30"];
     args.extend_from_slice(extra_args);
 
     let mut child = Command::new(quicpipe_bin())
@@ -164,7 +164,7 @@ fn run_connect_full(
     extra_args: &[&str],
     stdin_data: &[u8],
 ) -> (Vec<u8>, Vec<u8>, bool) {
-    let mut args = vec!["connect", addr, "--idle-timeout-s", "30"];
+    let mut args = vec!["connect", addr, "--idle-timeout", "30"];
     args.extend_from_slice(extra_args);
 
     let mut child = Command::new(quicpipe_bin())
@@ -616,7 +616,7 @@ fn test_max_retries_exhausted() {
             "2",
             "--retry-interval",
             "1",
-            "--idle-timeout-s",
+            "--idle-timeout",
             "5",
         ],
         b"",
@@ -657,7 +657,7 @@ fn test_multiple_concurrent_tcp_connections() {
             &quic_addr,
             "--listen",
             "127.0.0.1:0",
-            "--idle-timeout-s",
+            "--idle-timeout",
             "30",
         ],
         &[],
