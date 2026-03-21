@@ -5,7 +5,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
-use crate::config::ConnectArgs;
+use crate::config::{ConnectArgs, RetryArgs};
 use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::migration;
@@ -43,38 +43,39 @@ async fn handle_tcp_connection(
 /// Attempt to connect with retry logic
 async fn connect_with_retry(
     endpoint: &quinn::Endpoint,
-    args: &ConnectArgs,
+    server_addr: SocketAddr,
+    retry: &RetryArgs,
 ) -> Result<quinn::Connection> {
-    let retry_interval = Duration::from_secs(args.retry_interval);
+    let retry_interval = Duration::from_secs(retry.retry_interval);
 
-    if args.max_retries > 0 {
+    if retry.max_retries > 0 {
         tracing::info!(
             "retry mode enabled, connecting to {} (max {} attempts, {}s interval)",
-            args.server_addr,
-            args.max_retries,
-            args.retry_interval
+            server_addr,
+            retry.max_retries,
+            retry.retry_interval
         );
     } else {
         tracing::info!(
             "retry mode enabled, connecting to {} (unlimited attempts, {}s interval)",
-            args.server_addr,
-            args.retry_interval
+            server_addr,
+            retry.retry_interval
         );
     }
 
     let mut attempt = 1;
 
     loop {
-        if args.max_retries > 0 && attempt > args.max_retries {
+        if retry.max_retries > 0 && attempt > retry.max_retries {
             return Err(anyhow::anyhow!(
                 "Failed to connect after {} attempts",
-                args.max_retries
+                retry.max_retries
             ));
         }
 
-        tracing::debug!("connection attempt {attempt} to {}", args.server_addr);
+        tracing::debug!("connection attempt {attempt} to {server_addr}");
 
-        match endpoint.connect(args.server_addr, "localhost") {
+        match endpoint.connect(server_addr, "localhost") {
             Ok(connecting) => match connecting.await {
                 Ok(connection) => {
                     tracing::info!("connected after {attempt} attempt(s)");
@@ -110,8 +111,8 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     .await?;
 
     // Connect to the remote server with retry logic
-    let connection = if args.retry {
-        connect_with_retry(&endpoint, &args).await?
+    let connection = if args.retry.retry {
+        connect_with_retry(&endpoint, args.server_addr, &args.retry).await?
     } else {
         tracing::info!("connecting to {}", args.server_addr);
         endpoint.connect(args.server_addr, "localhost")?.await?
@@ -202,10 +203,14 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         .map_err(|e| anyhow::anyhow!("error binding tcp socket to {addrs:?}: {e}"))?;
 
     // Establish a single QUIC connection upfront and multiplex streams over it
-    let connection = endpoint
-        .connect(args.server_addr, "localhost")?
-        .await
-        .map_err(|e| anyhow::anyhow!("error connecting to {}: {e}", args.server_addr))?;
+    let connection = if args.retry.retry {
+        connect_with_retry(&endpoint, args.server_addr, &args.retry).await?
+    } else {
+        endpoint
+            .connect(args.server_addr, "localhost")?
+            .await
+            .map_err(|e| anyhow::anyhow!("error connecting to {}: {e}", args.server_addr))?
+    };
     tracing::info!("connected to {}", args.server_addr);
 
     let local_addr = tcp_listener.local_addr()?;

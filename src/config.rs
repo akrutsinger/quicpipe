@@ -246,6 +246,9 @@ pub(crate) struct ConnectTcpArgs {
     #[clap(short = 'l', long, value_name = "ADDR:PORT")]
     pub listen: String,
 
+    #[clap(flatten)]
+    pub retry: RetryArgs,
+
     /// Disable connection migration on network changes
     ///
     /// By default, the connection monitors network interfaces and automatically migrates when the
@@ -258,16 +261,9 @@ pub(crate) struct ConnectTcpArgs {
     pub common: CommonArgs,
 }
 
+/// Retry connection arguments, shared between connect and connect-tcp commands.
 #[derive(Parser, Debug)]
-pub(crate) struct ConnectArgs {
-    /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
-    #[clap(value_name = "SERVER")]
-    pub server_addr: SocketAddr,
-
-    /// Only receive data, don't send (close outgoing stream immediately)
-    #[clap(long)]
-    pub recv_only: bool,
-
+pub(crate) struct RetryArgs {
     /// Keep retrying until the server becomes available
     ///
     /// By default, the client fails immediately if the server is unreachable. With this flag,
@@ -282,6 +278,20 @@ pub(crate) struct ConnectArgs {
     /// Maximum retry attempts (0 = unlimited) [default: 0]
     #[clap(long, default_value = "0", value_name = "COUNT")]
     pub max_retries: u32,
+}
+
+#[derive(Parser, Debug)]
+pub(crate) struct ConnectArgs {
+    /// QUIC server address to connect to (e.g., 192.168.1.100:5000)
+    #[clap(value_name = "SERVER")]
+    pub server_addr: SocketAddr,
+
+    /// Only receive data, don't send (close outgoing stream immediately)
+    #[clap(long)]
+    pub recv_only: bool,
+
+    #[clap(flatten)]
+    pub retry: RetryArgs,
 
     /// Disable connection migration on network changes
     ///
