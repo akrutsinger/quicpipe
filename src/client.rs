@@ -126,7 +126,6 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
         Some(migration::spawn_migration_monitor(
             endpoint.clone(),
             args.server_addr,
-            migration::DEFAULT_POLL_INTERVAL,
         ))
     } else {
         None
@@ -192,7 +191,6 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         Some(migration::spawn_migration_monitor(
             endpoint.clone(),
             args.server_addr,
-            migration::DEFAULT_POLL_INTERVAL,
         ))
     } else {
         None
