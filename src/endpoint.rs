@@ -16,9 +16,9 @@ use crate::config::CommonArgs;
 /// to give the protocol stack a chance to transmit the frame before the process exits.
 pub(crate) async fn close_connection(connection: &quinn::Connection) {
     connection.close(0u32.into(), b"done");
-    // Give the runtime a chance to poll quinn's endpoint IO task, which
-    // needs to actually transmit the CONNECTION_CLOSE UDP packet.
-    tokio::time::sleep(Duration::from_millis(5)).await;
+    // Wait for quinn to actually transmit the CONNECTION_CLOSE UDP packet. After close(), closed()
+    // resolves once the frame is sent or the timeout expires.
+    let _ = tokio::time::timeout(Duration::from_millis(100), connection.closed()).await;
 }
 
 /// Dummy certificate verifier that treats any certificate as valid.
