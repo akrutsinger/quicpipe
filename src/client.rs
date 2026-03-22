@@ -1,10 +1,11 @@
 //! Client-side logic for connecting to servers.
 
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::time::Duration;
+
 use anyhow::Result;
 use quinn::VarInt;
 use quinn_proto::coding::Codec as _;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 use crate::config::{ConnectArgs, RetryArgs};

@@ -1,8 +1,9 @@
 //! Configuration and command line argument parsing.
 
+use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 
 /// QUIC| - Secure QUIC-based data forwarding tool
 ///

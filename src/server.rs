@@ -1,9 +1,10 @@
 //! Server-side logic for listening and accepting connections.
 
+use std::net::{SocketAddr, ToSocketAddrs};
+
 use anyhow::Result;
 use quinn::VarInt;
 use quinn_proto::coding::Codec as _;
-use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::config::ListenArgs;
 use crate::endpoint::create_endpoint;
