@@ -118,22 +118,26 @@ pub(crate) fn configure_client(
     Ok(client_config)
 }
 
-/// Creates a QUIC endpoint with server and client capabilities. If `target` is provided, match the
-/// target's IP version for binding.
+/// Creates a QUIC endpoint. When `target` is `Some`, creates a client-only endpoint matching the
+/// target's IP version. When `None`, creates a server endpoint that can also act as a client.
 pub(crate) async fn create_endpoint(
     common: &CommonArgs,
     alpns: Vec<Vec<u8>>,
     target: Option<std::net::SocketAddr>,
 ) -> Result<Endpoint> {
-    let bind_addr = match target {
-        Some(t) => common.bind_addr_for_target(t),
-        None => common.bind_addr(),
+    let client_config = configure_client(alpns.clone(), common.idle_timeout.0)?;
+
+    let mut endpoint = match target {
+        Some(t) => {
+            let bind_addr = common.bind_addr_for_target(t);
+            Endpoint::client(bind_addr)?
+        }
+        None => {
+            let bind_addr = common.bind_addr();
+            let server_config = configure_server(alpns, common.idle_timeout.0)?;
+            Endpoint::server(server_config, bind_addr)?
+        }
     };
-
-    let server_config = configure_server(alpns.clone(), common.idle_timeout.0)?;
-    let client_config = configure_client(alpns, common.idle_timeout.0)?;
-
-    let mut endpoint = Endpoint::server(server_config, bind_addr)?;
     endpoint.set_default_client_config(client_config);
 
     tracing::debug!("endpoint bound to {}", endpoint.local_addr()?);
