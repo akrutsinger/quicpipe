@@ -47,7 +47,7 @@ async fn read_and_verify_handshake(r: &mut quinn::RecvStream, expected: &[u8]) -
 
 /// Handle a single connection from a client.
 async fn handle_connection(
-    s: quinn::SendStream,
+    mut s: quinn::SendStream,
     mut r: quinn::RecvStream,
     remote_addr: SocketAddr,
     recv_only: bool,
@@ -60,6 +60,8 @@ async fn handle_connection(
             tracing::debug!("client disconnected during handshake: {e}");
             return Ok(());
         }
+        s.reset(1u8.into()).ok();
+        r.stop(1u8.into()).ok();
         tracing::warn!("handshake failed from {remote_addr}: {e}");
         return Err(e);
     }
@@ -87,7 +89,7 @@ async fn handle_connection(
 
 /// Handle a single bidi stream by forwarding it to a TCP backend.
 async fn handle_quic_stream(
-    s: quinn::SendStream,
+    mut s: quinn::SendStream,
     mut r: quinn::RecvStream,
     remote_addr: SocketAddr,
     addrs: Vec<SocketAddr>,
@@ -100,13 +102,20 @@ async fn handle_quic_stream(
             tracing::debug!("client {remote_addr} disconnected during handshake: {e}");
             return Ok(());
         }
+        s.reset(1u8.into()).ok();
+        r.stop(1u8.into()).ok();
         tracing::warn!("handshake failed from {remote_addr}: {e}");
         return Err(e);
     }
 
-    let tcp_stream = tokio::net::TcpStream::connect(addrs.as_slice())
-        .await
-        .map_err(|e| anyhow::anyhow!("error connecting to {addrs:?}: {e}"))?;
+    let tcp_stream = match tokio::net::TcpStream::connect(addrs.as_slice()).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            s.reset(1u8.into()).ok();
+            r.stop(1u8.into()).ok();
+            return Err(anyhow::anyhow!("error connecting to {addrs:?}: {e}"));
+        }
+    };
     let peer = tcp_stream.peer_addr()?;
     tracing::info!("connected to TCP backend {peer}");
 
