@@ -92,8 +92,6 @@ netwatcher = { version = "0.4", default-features = false }
 quinn-proto = { version = "0.11", default-features = false }
 
 [dev-dependencies]
-nix = { version = "0.31", features = ["signal", "process"] }
-tempfile = "3.8"
 
 [profile.dev]
 opt-level = 1

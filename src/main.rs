@@ -10,6 +10,8 @@ mod error;
 mod migration;
 mod server;
 mod stream;
+#[cfg(test)]
+mod tests;
 
 use config::{Args, Commands};
 

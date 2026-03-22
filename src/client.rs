@@ -16,7 +16,7 @@ use crate::error::is_graceful_close;
 use crate::migration;
 use crate::stream::forward_bidi;
 
-async fn send_handshake(s: &mut quinn::SendStream, handshake: &[u8]) -> Result<()> {
+pub(crate) async fn send_handshake(s: &mut quinn::SendStream, handshake: &[u8]) -> Result<()> {
     let mut varint_buf = [0u8; VarInt::MAX_SIZE];
     let mut cursor = &mut varint_buf[..];
     VarInt::try_from(handshake.len())?.encode(&mut cursor);

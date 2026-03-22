@@ -14,7 +14,10 @@ use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 
 /// Read a length-prefixed handshake from a QUIC stream and verify it.
-async fn read_and_verify_handshake(r: &mut quinn::RecvStream, expected: &[u8]) -> Result<()> {
+pub(crate) async fn read_and_verify_handshake(
+    r: &mut quinn::RecvStream,
+    expected: &[u8],
+) -> Result<()> {
     // QUIC's varint encoding [RFC 9000](https://www.rfc-editor.org/info/rfc9000) specifies the top
     // 2 bits of the first byte encode length (00=1, 01=2, 10=4, 11=8) Since this is a stream read
     // we have to get only the first byte and decode the varint length so we know how much more to
