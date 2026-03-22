@@ -79,6 +79,7 @@ pub(crate) fn configure_server(
     ));
     let transport_config = std::sync::Arc::get_mut(&mut server_config.transport)
         .expect("server config just created, no other references exist");
+    // quicpipe only uses bidi streams; reject uni streams from peers
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
     let idle_timeout = idle_timeout_s
@@ -102,6 +103,8 @@ pub(crate) fn configure_client(
     crypto.alpn_protocols = alpns;
 
     let mut transport_config = quinn::TransportConfig::default();
+    // quicpipe only uses bidi streams; reject uni streams from peers
+    transport_config.max_concurrent_uni_streams(0_u8.into());
     let idle_timeout = idle_timeout_s
         .map(|s| std::time::Duration::from_secs(s).try_into())
         .transpose()?;
@@ -130,7 +133,6 @@ pub(crate) async fn create_endpoint(
     let server_config = configure_server(alpns.clone(), common.idle_timeout.0)?;
     let client_config = configure_client(alpns, common.idle_timeout.0)?;
 
-    // Create and bind the endpoint with both server and client capabilities
     let mut endpoint = Endpoint::server(server_config, bind_addr)?;
     endpoint.set_default_client_config(client_config);
 

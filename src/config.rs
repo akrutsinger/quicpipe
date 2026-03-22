@@ -140,10 +140,8 @@ impl CommonArgs {
         } else if let Some(addr) = self.ipv6_addr {
             SocketAddr::V6(addr)
         } else if let Some(port) = self.port {
-            // Use the specified port with wildcard IPv4 address
             SocketAddr::from(([0, 0, 0, 0], port))
         } else {
-            // Default to IPv4 on any available port
             SocketAddr::from(([0, 0, 0, 0], 0))
         }
     }
@@ -153,7 +151,6 @@ impl CommonArgs {
     /// This ensures we bind to an IPv4 address when connecting to IPv4, and IPv6 when connecting to
     /// IPv6.
     pub(crate) fn bind_addr_for_target(&self, target: SocketAddr) -> SocketAddr {
-        // If explicit addresses are specified, use them
         if let Some(addr) = self.ipv4_addr {
             return SocketAddr::V4(addr);
         }
@@ -161,7 +158,6 @@ impl CommonArgs {
             return SocketAddr::V6(addr);
         }
 
-        // Match the target's IP version
         let port = self.port.unwrap_or(0);
         match target {
             SocketAddr::V4(_) => SocketAddr::from(([0, 0, 0, 0], port)),

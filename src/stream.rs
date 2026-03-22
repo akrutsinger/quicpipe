@@ -21,7 +21,6 @@ pub(crate) async fn copy_to_quinn(
     tokio::select! {
         res = tokio::io::copy(&mut from, &mut send) => {
             let size = res?;
-            // Gracefully finish the stream instead of resetting
             send.finish().ok();
             Ok(size)
         }
@@ -48,7 +47,6 @@ pub(crate) async fn copy_from_quinn(
             match res {
                 Ok(size) => Ok(size),
                 Err(e) => {
-                    // Check if this is a stream reset error
                     if is_io_close_error(&e) {
                         tracing::debug!("stream finished by peer");
                         Ok(0)
@@ -100,12 +98,10 @@ pub(crate) async fn forward_bidi(
         io::Result::Ok(())
     });
 
-    // Wait for both tasks concurrently so neither blocks the other
     let (stdout_result, stdin_result) = tokio::join!(forward_to_stdout, forward_from_stdin);
     let stdout_result = stdout_result?;
     let stdin_result = stdin_result?;
 
-    // Check if either failed with a non-cancellation error
     match (stdout_result, stdin_result) {
         (Ok(down), Ok(up)) => {
             tracing::debug!("forwarded {up} bytes up, {down} bytes down");

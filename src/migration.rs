@@ -51,6 +51,8 @@ pub(crate) fn spawn_migration_monitor(endpoint: Endpoint, target: SocketAddr) ->
                     diff.addrs_removed.iter().any(|r| is_v4 == r.ip.is_ipv4())
                 });
 
+            // Track previous state so we can look up IPs of removed interfaces (removed interfaces
+            // only appear as indices in the diff)
             prev_interfaces.clone_from(&update.interfaces);
 
             if should_rebind {

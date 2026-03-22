@@ -42,7 +42,6 @@ async fn handle_tcp_connection(
         .await
         .map_err(|e| anyhow::anyhow!("error opening bidi stream: {e}"))?;
 
-    // Send the length-prefixed handshake unless we are using a custom ALPN
     if !no_handshake {
         send_handshake(&mut quic_send, &handshake).await?;
     }
@@ -86,6 +85,7 @@ async fn connect_with_retry(
 
         tracing::debug!("connection attempt {attempt} to {server_addr}");
 
+        // SNI value is irrelevant since SkipServerVerification ignores all certs
         match endpoint.connect(server_addr, "localhost") {
             Ok(connecting) => match connecting.await {
                 Ok(connection) => {
@@ -121,7 +121,6 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     )
     .await?;
 
-    // Connect to the remote server with retry logic
     let connection = if args.retry.retry {
         connect_with_retry(&endpoint, args.server_addr, &args.retry).await?
     } else {
@@ -131,7 +130,6 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
 
     tracing::info!("connected to {}", args.server_addr);
 
-    // Start migration monitor if enabled
     let _migration_guard = if args.migrate {
         tracing::info!("connection migration enabled");
         Some(migration::spawn_migration_monitor(
@@ -142,11 +140,9 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
         None
     };
 
-    // Open a bidirectional stream
     let (mut s, r) = connection.open_bi().await?;
     tracing::debug!("opened bidi stream to {}", args.server_addr);
 
-    // Send the length-prefixed handshake unless disabled
     if !args.common.no_handshake {
         let handshake = args.common.handshake()?;
         send_handshake(&mut s, &handshake).await?;
@@ -165,7 +161,6 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
 
     tokio::io::stdout().flush().await?;
 
-    // Handle the result - suppress normal disconnection errors
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
@@ -194,7 +189,6 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
     )
     .await?;
 
-    // Start migration monitor if enabled
     let _migration_guard = if args.migrate {
         tracing::info!("connection migration enabled");
         Some(migration::spawn_migration_monitor(

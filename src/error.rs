@@ -20,12 +20,10 @@ pub(crate) fn is_io_close_error(err: &io::Error) -> bool {
 /// - Quinn connection errors (`ConnectionClosed`, `Reset`, etc.)
 /// - Quinn read errors (`ConnectionLost`, `Reset`)
 pub(crate) fn is_graceful_close(err: &anyhow::Error) -> bool {
-    // Check for io::Error
     if let Some(io_err) = err.downcast_ref::<io::Error>() {
         return is_io_close_error(io_err);
     }
 
-    // Check for Quinn connection errors
     if let Some(conn_err) = err.downcast_ref::<quinn::ConnectionError>() {
         return matches!(
             conn_err,
@@ -36,7 +34,6 @@ pub(crate) fn is_graceful_close(err: &anyhow::Error) -> bool {
         );
     }
 
-    // Check for Quinn read errors
     if let Some(read_err) = err.downcast_ref::<quinn::ReadError>() {
         return matches!(
             read_err,
