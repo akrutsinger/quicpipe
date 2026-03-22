@@ -242,6 +242,10 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
     loop {
         let next = tokio::select! {
             stream = tcp_listener.accept() => stream,
+            reason = connection.closed() => {
+                tracing::info!("QUIC connection closed: {reason}");
+                break;
+            },
             _ = cancel.cancelled() => break,
         };
 
@@ -259,9 +263,15 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         let cancel = cancel.clone();
 
         tokio::spawn(async move {
-            if let Err(cause) =
-                handle_tcp_connection(tcp_stream, tcp_addr, connection, no_handshake, handshake, cancel)
-                    .await
+            if let Err(cause) = handle_tcp_connection(
+                tcp_stream,
+                tcp_addr,
+                connection,
+                no_handshake,
+                handshake,
+                cancel,
+            )
+            .await
             {
                 tracing::warn!("error handling connection: {cause}");
             }

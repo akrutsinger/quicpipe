@@ -227,6 +227,7 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
                 tracing::error!("error handling connection from {remote_addr}: {e}");
             }
         }
+        close_connection(&connection).await;
         if args.once {
             break;
         }
@@ -255,6 +256,9 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
     tracing::info!("forwarding incoming requests to '{}'.", args.backend);
     tracing::debug!("to connect, use: quicpipe connect {local_addr}");
 
+    let mut connections = Vec::new();
+    let mut handles = Vec::new();
+
     loop {
         let connecting = tokio::select! {
             res = endpoint.accept() => {
@@ -274,18 +278,27 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
             }
         };
 
+        connections.push(connection.clone());
+
         let addrs = addrs.clone();
         let no_handshake = args.common.no_handshake;
         let handshake = args.common.handshake()?;
         let cancel = cancel.clone();
 
-        tokio::spawn(async move {
+        handles.push(tokio::spawn(async move {
             if let Err(cause) =
                 handle_quic_connection(connection, addrs, no_handshake, handshake, cancel).await
             {
                 tracing::warn!("error handling connection: {cause}");
             }
-        });
+        }));
+    }
+
+    for conn in &connections {
+        conn.close(0u32.into(), b"shutdown");
+    }
+    for handle in handles {
+        let _ = handle.await;
     }
     Ok(())
 }
