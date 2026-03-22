@@ -25,7 +25,7 @@ pub(crate) async fn copy_to_quinn(
         }
         _ = token.cancelled() => {
             send.reset(0u8.into()).ok();
-            Err(io::Error::other("cancelled"))
+            Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
         }
     }
 }
@@ -44,7 +44,7 @@ pub(crate) async fn copy_from_quinn(
         res = tokio::io::copy(&mut recv, &mut to) => Ok(res?),
         _ = token.cancelled() => {
             recv.stop(0u8.into()).ok();
-            Err(io::Error::other("cancelled"))
+            Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
         }
     }
 }

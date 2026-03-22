@@ -87,7 +87,7 @@ pub(crate) fn spawn_migration_monitor(endpoint: Endpoint, target: SocketAddr) ->
                             }
                             Err(e) => tracing::warn!("failed to rebind endpoint: {e}"),
                         },
-                        Err(e) => tracing::warn!("failed to bind new socketto {new_addr}: {e}"),
+                        Err(e) => tracing::warn!("failed to bind new socket to {new_addr}: {e}"),
                     }
                 }
                 _ = shutdown_rx.changed() => {
