@@ -1,6 +1,8 @@
 //! Server-side logic for listening and accepting connections.
 
 use anyhow::Result;
+use quinn::VarInt;
+use quinn_proto::coding::Codec as _;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::config::ListenArgs;
@@ -10,21 +12,23 @@ use crate::stream::forward_bidi;
 
 /// Read a length-prefixed handshake from a QUIC stream and verify it.
 async fn read_and_verify_handshake(r: &mut quinn::RecvStream, expected: &[u8]) -> Result<()> {
-    // Read the VarInt length prefix
-    let mut first = [0u8; 1];
-    r.read_exact(&mut first).await?;
-    let len = quicpipe::varint_len(first[0]);
-    let mut varint_buf = vec![0u8; len];
-    varint_buf[0] = first[0];
-    if len > 1 {
-        r.read_exact(&mut varint_buf[1..]).await?;
+    let mut header = [0u8; 1];
+    r.read_exact(&mut header).await?;
+    let varint_len = 1usize << (header[0] >> 6);
+
+    let mut varint_buf = [0u8; VarInt::MAX_SIZE];
+    varint_buf[0] = header[0];
+    if varint_len > 1 {
+        r.read_exact(&mut varint_buf[1..varint_len]).await?;
     }
-    let handshake_len = quicpipe::decode_varint(&varint_buf) as usize;
+
+    let handshake_len = VarInt::decode(&mut &varint_buf[..varint_len])
+        .map_err(|_| anyhow::anyhow!("invalid varint prefix"))?
+        .into_inner() as usize;
 
     anyhow::ensure!(
         handshake_len <= quicpipe::MAX_HANDSHAKE_SIZE,
-        "handshake too large: {} bytes (max {})",
-        handshake_len,
+        "handshake too large: {handshake_len} bytes (max {})",
         quicpipe::MAX_HANDSHAKE_SIZE
     );
 

@@ -610,6 +610,7 @@ dependencies = [
  "netwatcher",
  "nix 0.31.2",
  "quinn",
+ "quinn-proto",
  "rcgen",
  "rustls",
  "tempfile",

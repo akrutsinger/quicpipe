@@ -1,6 +1,8 @@
 //! Client-side logic for connecting to servers.
 
 use anyhow::Result;
+use quinn::VarInt;
+use quinn_proto::coding::Codec as _;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -10,6 +12,18 @@ use crate::endpoint::create_endpoint;
 use crate::error::is_graceful_close;
 use crate::migration;
 use crate::stream::forward_bidi;
+
+async fn send_handshake(s: &mut quinn::SendStream, handshake: &[u8]) -> Result<()> {
+    let mut varint_buf = [0u8; VarInt::MAX_SIZE];
+    let mut cursor = &mut varint_buf[..];
+    VarInt::try_from(handshake.len())?.encode(&mut cursor);
+    let varint_len = VarInt::MAX_SIZE - cursor.len();
+    s.write_all(&varint_buf[..varint_len]).await?;
+    s.write_all(handshake).await?;
+    tracing::debug!("sent {} byte handshake", handshake.len());
+
+    Ok(())
+}
 
 /// Handle a single TCP connection by opening a new bidi stream on the existing QUIC connection.
 async fn handle_tcp_connection(
@@ -29,11 +43,7 @@ async fn handle_tcp_connection(
 
     // Send the length-prefixed handshake unless we are using a custom ALPN
     if !no_handshake {
-        tracing::debug!("sent {} byte handshake", handshake.len());
-        quic_send
-            .write_all(&quicpipe::encode_varint(handshake.len() as u64))
-            .await?;
-        quic_send.write_all(&handshake).await?;
+        send_handshake(&mut quic_send, &handshake).await?;
     }
 
     forward_bidi(tcp_recv, tcp_send, quic_recv, quic_send).await?;
@@ -138,9 +148,7 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     // Send the length-prefixed handshake unless disabled
     if !args.common.no_handshake {
         let handshake = args.common.handshake()?;
-        s.write_all(&quicpipe::encode_varint(handshake.len() as u64))
-            .await?;
-        s.write_all(&handshake).await?;
+        send_handshake(&mut s, &handshake).await?;
     }
 
     let result = if args.recv_only {
