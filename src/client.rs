@@ -239,6 +239,8 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         args.server_addr
     );
 
+    let mut handles = Vec::new();
+
     loop {
         let next = tokio::select! {
             stream = tcp_listener.accept() => stream,
@@ -262,7 +264,7 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         let handshake = args.common.handshake()?;
         let cancel = cancel.clone();
 
-        tokio::spawn(async move {
+        handles.push(tokio::spawn(async move {
             if let Err(cause) = handle_tcp_connection(
                 tcp_stream,
                 tcp_addr,
@@ -275,9 +277,12 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
             {
                 tracing::warn!("error handling connection: {cause}");
             }
-        });
+        }));
     }
 
     close_connection(&connection).await;
+    for handle in handles {
+        let _ = handle.await;
+    }
     Ok(())
 }
