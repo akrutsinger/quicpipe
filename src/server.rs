@@ -5,7 +5,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use anyhow::Result;
 use quinn::VarInt;
 use quinn_proto::coding::Codec as _;
-
+use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ListenArgs;
@@ -236,6 +236,7 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
                 tracing::error!("error handling connection from {remote_addr}: {e}");
             }
         }
+        tokio::io::stdout().flush().await.ok();
         close_connection(&connection).await;
         if args.once {
             break;
