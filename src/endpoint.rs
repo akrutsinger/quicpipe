@@ -1,11 +1,25 @@
 //! QUIC endpoint creation and configuration.
 
+use std::time::Duration;
+
 use anyhow::Result;
 use quinn::Endpoint;
 use rustls::client::danger::{ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 
 use crate::config::CommonArgs;
+
+/// Close a QUIC connection and wait for the close frame to be transmitted.
+///
+/// Quinn's `connection.close()` only queues the `CONNECTION_CLOSE` frame; the endpoint's IO driver
+/// must poll to actually send the UDP packet. We await `connection.closed()` with a short timeout
+/// to give the protocol stack a chance to transmit the frame before the process exits.
+pub(crate) async fn close_connection(connection: &quinn::Connection) {
+    connection.close(0u32.into(), b"done");
+    // Give the runtime a chance to poll quinn's endpoint IO task, which
+    // needs to actually transmit the CONNECTION_CLOSE UDP packet.
+    tokio::time::sleep(Duration::from_millis(5)).await;
+}
 
 /// Dummy certificate verifier that treats any certificate as valid.
 /// NOTE, such verification is vulnerable to MITM attacks, but convenient for testing.
@@ -83,7 +97,7 @@ pub(crate) fn configure_server(
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
     let idle_timeout = idle_timeout_s
-        .map(|s| std::time::Duration::from_secs(s).try_into())
+        .map(|s| Duration::from_secs(s).try_into())
         .transpose()?;
     transport_config.max_idle_timeout(idle_timeout);
 
@@ -106,7 +120,7 @@ pub(crate) fn configure_client(
     // quicpipe only uses bidi streams; reject uni streams from peers
     transport_config.max_concurrent_uni_streams(0_u8.into());
     let idle_timeout = idle_timeout_s
-        .map(|s| std::time::Duration::from_secs(s).try_into())
+        .map(|s| Duration::from_secs(s).try_into())
         .transpose()?;
     transport_config.max_idle_timeout(idle_timeout);
 

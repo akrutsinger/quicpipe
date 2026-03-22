@@ -6,8 +6,10 @@ use anyhow::Result;
 use quinn::VarInt;
 use quinn_proto::coding::Codec as _;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::config::ListenArgs;
-use crate::endpoint::create_endpoint;
+use crate::endpoint::{close_connection, create_endpoint};
 use crate::error::is_graceful_close;
 use crate::stream::forward_bidi;
 
@@ -51,6 +53,7 @@ async fn handle_connection(
     recv_only: bool,
     no_handshake: bool,
     handshake: Vec<u8>,
+    cancel: CancellationToken,
 ) -> Result<()> {
     if !no_handshake && let Err(e) = read_and_verify_handshake(&mut r, &handshake).await {
         if is_graceful_close(&e) {
@@ -63,10 +66,10 @@ async fn handle_connection(
 
     let result = if recv_only {
         tracing::info!("forwarding stdout to {remote_addr} (ignoring stdin)");
-        forward_bidi(tokio::io::empty(), tokio::io::stdout(), r, s).await
+        forward_bidi(tokio::io::empty(), tokio::io::stdout(), r, s, cancel).await
     } else {
         tracing::info!("forwarding stdin/stdout to {remote_addr}");
-        forward_bidi(tokio::io::stdin(), tokio::io::stdout(), r, s).await
+        forward_bidi(tokio::io::stdin(), tokio::io::stdout(), r, s, cancel).await
     };
 
     match result {
@@ -74,7 +77,7 @@ async fn handle_connection(
         Err(e) => {
             if is_graceful_close(&e) {
                 tracing::debug!("connection closed: {e}");
-                Ok(()) // Treat as graceful close
+                Ok(())
             } else {
                 Err(e)
             }
@@ -90,6 +93,7 @@ async fn handle_quic_stream(
     addrs: Vec<SocketAddr>,
     no_handshake: bool,
     handshake: Vec<u8>,
+    cancel: CancellationToken,
 ) -> Result<()> {
     if !no_handshake && let Err(e) = read_and_verify_handshake(&mut r, &handshake).await {
         if is_graceful_close(&e) {
@@ -107,7 +111,7 @@ async fn handle_quic_stream(
     tracing::info!("connected to TCP backend {peer}");
 
     let (read, write) = tcp_stream.into_split();
-    forward_bidi(read, write, r, s).await?;
+    forward_bidi(read, write, r, s, cancel).await?;
     Ok(())
 }
 
@@ -117,6 +121,7 @@ async fn handle_quic_connection(
     addrs: Vec<SocketAddr>,
     no_handshake: bool,
     handshake: Vec<u8>,
+    cancel: CancellationToken,
 ) -> Result<()> {
     let remote_addr = connection.remote_address();
     tracing::info!("got connection from {remote_addr}");
@@ -141,9 +146,10 @@ async fn handle_quic_connection(
 
         let addrs = addrs.clone();
         let handshake = handshake.clone();
+        let cancel = cancel.clone();
         tokio::spawn(async move {
             if let Err(cause) =
-                handle_quic_stream(s, r, remote_addr, addrs, no_handshake, handshake).await
+                handle_quic_stream(s, r, remote_addr, addrs, no_handshake, handshake, cancel).await
             {
                 if is_graceful_close(&cause) {
                     tracing::debug!("stream closed: {cause}");
@@ -154,6 +160,7 @@ async fn handle_quic_connection(
         });
     }
 
+    close_connection(&connection).await;
     Ok(())
 }
 
@@ -161,6 +168,14 @@ async fn handle_quic_connection(
 pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
+
+    let cancel = CancellationToken::new();
+    let cancel_ctrl_c = cancel.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down gracefully...");
+        cancel_ctrl_c.cancel();
+    });
 
     tracing::info!("listening on: {local_addr}");
     tracing::debug!("to connect, use: quicpipe connect {local_addr}");
@@ -173,16 +188,12 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
                     None => break,
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                tracing::info!("shutting down gracefully...");
-                break;
-            }
+            _ = cancel.cancelled() => break,
         };
         let connection = match connecting.await {
             Ok(connection) => connection,
             Err(cause) => {
                 tracing::warn!("error accepting connection: {cause}");
-                // if accept fails, we want to continue accepting connections
                 continue;
             }
         };
@@ -192,7 +203,6 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
             Ok(x) => x,
             Err(cause) => {
                 tracing::warn!("error accepting stream: {cause}");
-                // if accept_bi fails, we want to continue accepting connections
                 continue;
             }
         };
@@ -206,6 +216,7 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
             args.recv_only,
             args.common.no_handshake,
             args.common.handshake()?,
+            cancel.clone(),
         )
         .await
         {
@@ -216,7 +227,6 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
                 tracing::error!("error handling connection from {remote_addr}: {e}");
             }
         }
-
         if args.once {
             break;
         }
@@ -233,6 +243,14 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
     let endpoint = create_endpoint(&args.common, vec![args.common.alpn()?], None).await?;
     let local_addr = endpoint.local_addr()?;
 
+    let cancel = CancellationToken::new();
+    let cancel_ctrl_c = cancel.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down gracefully...");
+        cancel_ctrl_c.cancel();
+    });
+
     tracing::info!("listening on: {local_addr}");
     tracing::info!("forwarding incoming requests to '{}'.", args.backend);
     tracing::debug!("to connect, use: quicpipe connect {local_addr}");
@@ -245,10 +263,7 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
                     None => break,
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                tracing::info!("shutting down gracefully...");
-                break;
-            }
+            _ = cancel.cancelled() => break,
         };
 
         let connection = match connecting.await {
@@ -262,10 +277,11 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
         let addrs = addrs.clone();
         let no_handshake = args.common.no_handshake;
         let handshake = args.common.handshake()?;
+        let cancel = cancel.clone();
 
         tokio::spawn(async move {
             if let Err(cause) =
-                handle_quic_connection(connection, addrs, no_handshake, handshake).await
+                handle_quic_connection(connection, addrs, no_handshake, handshake, cancel).await
             {
                 tracing::warn!("error handling connection: {cause}");
             }

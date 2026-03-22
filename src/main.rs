@@ -29,17 +29,20 @@ async fn main() {
         .with_env_filter(filter)
         .init();
 
-    let res = match args.command {
+    let result = match args.command {
         Commands::Listen(args) => server::listen_stdio(args).await,
         Commands::Connect(args) => client::connect_stdio(args).await,
         Commands::ListenTcp(args) => server::listen_tcp(args).await,
         Commands::ConnectTcp(args) => client::connect_tcp(args).await,
     };
-    match res {
+
+    // Exit immediately to avoid blocking on tokio's stdin background thread,
+    // which can't be cancelled and would hang until the next key press.
+    match result {
         Ok(()) => std::process::exit(0),
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1)
+            std::process::exit(1);
         }
     }
 }

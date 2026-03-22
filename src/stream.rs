@@ -2,10 +2,9 @@
 
 use std::io;
 
+use anyhow::Result;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
-
-use crate::error::is_io_close_error;
 
 /// Copy from a reader to a quinn stream.
 ///
@@ -25,9 +24,8 @@ pub(crate) async fn copy_to_quinn(
             Ok(size)
         }
         _ = token.cancelled() => {
-            // Gracefully finish instead of reset to avoid "reset by peer" errors
-            send.finish().ok();
-            Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
+            send.reset(0u8.into()).ok();
+            Err(io::Error::other("cancelled"))
         }
     }
 }
@@ -43,28 +41,14 @@ pub(crate) async fn copy_from_quinn(
     token: CancellationToken,
 ) -> io::Result<u64> {
     tokio::select! {
-        res = tokio::io::copy(&mut recv, &mut to) => {
-            match res {
-                Ok(size) => Ok(size),
-                Err(e) => {
-                    if is_io_close_error(&e) {
-                        tracing::debug!("stream finished by peer");
-                        Ok(0)
-                    } else {
-                        Err(e)
-                    }
-                }
-            }
-        },
+        res = tokio::io::copy(&mut recv, &mut to) => Ok(res?),
         _ = token.cancelled() => {
-            // Don't send stop - just let the stream close naturally
-            recv.stop(0u8.into()).ok();
             Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
         }
     }
 }
 
-pub(crate) fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
+fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
     move |x| {
         token.cancel();
         x
@@ -72,16 +56,17 @@ pub(crate) fn cancel_token<T>(token: CancellationToken) -> impl Fn(T) -> T {
 }
 
 /// Bidirectionally forward data from a quinn stream and an arbitrary tokio reader/writer pair,
-/// aborting both sides when either one forwarder is done, or when control-c is pressed.
+/// aborting both sides when the provided cancellation token is triggered.
 pub(crate) async fn forward_bidi(
     from1: impl AsyncRead + Send + Sync + Unpin + 'static,
     to1: impl AsyncWrite + Send + Sync + Unpin + 'static,
     from2: quinn::RecvStream,
     to2: quinn::SendStream,
-) -> anyhow::Result<()> {
-    let token1 = CancellationToken::new();
-    let token2 = token1.clone();
-    let token3 = token1.clone();
+    cancel: CancellationToken,
+) -> Result<()> {
+    let local = cancel.child_token();
+    let token1 = local.clone();
+    let token2 = local.clone();
     let forward_from_stdin = tokio::spawn(async move {
         copy_to_quinn(from1, to2, token1.clone())
             .await
@@ -91,11 +76,6 @@ pub(crate) async fn forward_bidi(
         copy_from_quinn(from2, to1, token2.clone())
             .await
             .map_err(cancel_token(token2))
-    });
-    let _control_c = tokio::spawn(async move {
-        tokio::signal::ctrl_c().await?;
-        token3.cancel();
-        io::Result::Ok(())
     });
 
     let (stdout_result, stdin_result) = tokio::join!(forward_to_stdout, forward_from_stdin);
