@@ -49,7 +49,7 @@ pub(crate) async fn read_and_verify_handshake(
 }
 
 /// Handle a single connection from a client.
-async fn handle_connection(
+pub(crate) async fn handle_connection(
     mut s: quinn::SendStream,
     mut r: quinn::RecvStream,
     remote_addr: SocketAddr,
@@ -91,7 +91,7 @@ async fn handle_connection(
 }
 
 /// Handle a single bidi stream by forwarding it to a TCP backend.
-async fn handle_quic_stream(
+pub(crate) async fn handle_quic_stream(
     mut s: quinn::SendStream,
     mut r: quinn::RecvStream,
     remote_addr: SocketAddr,
@@ -128,7 +128,7 @@ async fn handle_quic_stream(
 }
 
 /// Handle an incoming QUIC connection by accepting streams and forwarding each to a TCP backend.
-async fn handle_quic_connection(
+pub(crate) async fn handle_quic_connection(
     connection: quinn::Connection,
     addrs: Vec<SocketAddr>,
     no_handshake: bool,

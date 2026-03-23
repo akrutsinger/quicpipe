@@ -29,7 +29,7 @@ pub(crate) async fn send_handshake(s: &mut quinn::SendStream, handshake: &[u8]) 
 }
 
 /// Handle a single TCP connection by opening a new bidi stream on the existing QUIC connection.
-async fn handle_tcp_connection(
+pub(crate) async fn handle_tcp_connection(
     tcp_stream: tokio::net::TcpStream,
     tcp_addr: SocketAddr,
     connection: quinn::Connection,

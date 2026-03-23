@@ -41,5 +41,15 @@ pub(crate) fn is_graceful_close(err: &anyhow::Error) -> bool {
         );
     }
 
+    // read_exact returns ReadExactError which wraps ReadError — check the inner error.
+    if let Some(quinn::ReadExactError::ReadError(read_err)) =
+        err.downcast_ref::<quinn::ReadExactError>()
+    {
+        return matches!(
+            read_err,
+            quinn::ReadError::ConnectionLost(_) | quinn::ReadError::Reset(_)
+        );
+    }
+
     false
 }
