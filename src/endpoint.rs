@@ -16,9 +16,10 @@ use crate::config::CommonArgs;
 /// to give the protocol stack a chance to transmit the frame before the process exits.
 pub(crate) async fn close_connection(connection: &quinn::Connection) {
     connection.close(0u32.into(), b"done");
-    // Wait for quinn to actually transmit the CONNECTION_CLOSE UDP packet. After close(), closed()
-    // resolves once the frame is sent or the timeout expires.
-    let _ = tokio::time::timeout(Duration::from_millis(100), connection.closed()).await;
+    // Await the drain period so Quinn actually transmits the CONNECTION_CLOSE frame before we drop
+    // the connection. For a live peer this resolves in a few RTTs; for an unresponsive peer the
+    // configured idle timeout acts as the upper bound.
+    connection.closed().await;
 }
 
 /// Dummy certificate verifier that treats any certificate as valid.

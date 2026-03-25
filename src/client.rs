@@ -14,7 +14,7 @@ use crate::config::{ConnectArgs, RetryArgs};
 use crate::endpoint::{close_connection, create_endpoint};
 use crate::error::is_graceful_close;
 use crate::migration;
-use crate::stream::forward_bidi;
+use crate::stream::{forward_bidi, forward_stdio};
 
 pub(crate) async fn send_handshake(s: &mut quinn::SendStream, handshake: &[u8]) -> Result<()> {
     let mut varint_buf = [0u8; VarInt::MAX_SIZE];
@@ -124,11 +124,22 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     )
     .await?;
 
+    let cancel = CancellationToken::new();
+    let cancel_ctrl_c = cancel.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        cancel_ctrl_c.cancel();
+    });
+
     let connection = if args.retry.retry {
         connect_with_retry(&endpoint, args.server_addr, &args.retry).await?
     } else {
         tracing::info!("connecting to {}", args.server_addr);
-        endpoint.connect(args.server_addr, "localhost")?.await?
+        let connecting = endpoint.connect(args.server_addr, "localhost")?;
+        tokio::select! {
+            res = connecting => res?,
+            _ = cancel.cancelled() => anyhow::bail!("connection cancelled"),
+        }
     };
 
     tracing::info!("connected to {}", args.server_addr);
@@ -142,13 +153,6 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
     } else {
         None
     };
-
-    let cancel = CancellationToken::new();
-    let cancel_ctrl_c = cancel.clone();
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        cancel_ctrl_c.cancel();
-    });
 
     let (mut s, r) = connection.open_bi().await?;
     tracing::debug!("opened bidi stream to {}", args.server_addr);
@@ -166,10 +170,11 @@ pub(crate) async fn connect_stdio(args: ConnectArgs) -> Result<()> {
         forward_bidi(tokio::io::empty(), tokio::io::stdout(), r, s, cancel).await
     } else {
         tracing::info!("forwarding stdin/stdout to {}", args.server_addr);
-        forward_bidi(tokio::io::stdin(), tokio::io::stdout(), r, s, cancel).await
+        forward_stdio(tokio::io::stdin(), tokio::io::stdout(), r, s, cancel).await
     };
 
-    tokio::io::stdout().flush().await?;
+    tokio::io::stdout().flush().await.ok();
+    close_connection(&connection).await;
 
     match result {
         Ok(_) => Ok(()),
@@ -221,14 +226,14 @@ pub(crate) async fn connect_tcp(args: crate::config::ConnectTcpArgs) -> Result<(
         .await
         .map_err(|e| anyhow::anyhow!("error binding tcp socket to {addrs:?}: {e}"))?;
 
-    // Establish a single QUIC connection upfront and multiplex streams over it
     let connection = if args.retry.retry {
         connect_with_retry(&endpoint, args.server_addr, &args.retry).await?
     } else {
-        endpoint
-            .connect(args.server_addr, "localhost")?
-            .await
-            .map_err(|e| anyhow::anyhow!("error connecting to {}: {e}", args.server_addr))?
+        let connecting = endpoint.connect(args.server_addr, "localhost")?;
+        tokio::select! {
+            res = connecting => res.map_err(|e| anyhow::anyhow!("error connecting to {}: {e}", args.server_addr))?,
+            _ = cancel.cancelled() => anyhow::bail!("connection cancelled"),
+        }
     };
     tracing::info!("connected to {}", args.server_addr);
 

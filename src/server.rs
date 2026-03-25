@@ -1,6 +1,7 @@
 //! Server-side logic for listening and accepting connections.
 
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::time::Duration;
 
 use anyhow::Result;
 use quinn::VarInt;
@@ -202,21 +203,34 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
             }
             _ = cancel.cancelled() => break,
         };
-        let connection = match connecting.await {
-            Ok(connection) => connection,
-            Err(cause) => {
-                tracing::warn!("error accepting connection: {cause}");
+        // The QUIC handshake may be stale if the client connected while we were busy handling a
+        // previous connection and has since died. Bound it so we don't block the accept loop
+        // forever.
+        let connection = tokio::select! {
+            res = connecting => match res {
+                Ok(connection) => connection,
+                Err(cause) => {
+                    tracing::warn!("error accepting connection: {cause}");
+                    continue;
+                }
+            },
+            _ = cancel.cancelled() => break,
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                tracing::debug!("incoming connection handshake timed out, skipping");
                 continue;
             }
         };
         let remote_addr = connection.remote_address();
         tracing::info!("got connection from {remote_addr}");
-        let (s, r) = match connection.accept_bi().await {
-            Ok(x) => x,
-            Err(cause) => {
-                tracing::warn!("error accepting stream: {cause}");
-                continue;
-            }
+        let (s, r) = tokio::select! {
+            res = connection.accept_bi() => match res {
+                Ok(x) => x,
+                Err(cause) => {
+                    tracing::warn!("error accepting stream: {cause}");
+                    continue;
+                }
+            },
+            _ = cancel.cancelled() => break,
         };
         tracing::debug!("accepted bidi stream from {remote_addr}");
 
@@ -240,11 +254,16 @@ pub(crate) async fn listen_stdio(args: ListenArgs) -> Result<()> {
             }
         }
         tokio::io::stdout().flush().await.ok();
-        close_connection(&connection).await;
+        connection.close(0u32.into(), b"done");
         if args.once {
             break;
         }
     }
+
+    while let Ok(Some(incoming)) = tokio::time::timeout(Duration::ZERO, endpoint.accept()).await {
+        incoming.refuse();
+    }
+
     Ok(())
 }
 
@@ -283,10 +302,17 @@ pub(crate) async fn listen_tcp(args: crate::config::ListenTcpArgs) -> Result<()>
             _ = cancel.cancelled() => break,
         };
 
-        let connection = match connecting.await {
-            Ok(connection) => connection,
-            Err(cause) => {
-                tracing::warn!("error accepting connection: {cause}");
+        let connection = tokio::select! {
+            res = connecting => match res {
+                Ok(connection) => connection,
+                Err(cause) => {
+                    tracing::warn!("error accepting connection: {cause}");
+                    continue;
+                }
+            },
+            _ = cancel.cancelled() => break,
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                tracing::debug!("incoming connection handshake timed out, skipping");
                 continue;
             }
         };
